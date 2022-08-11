@@ -8,48 +8,7 @@ import matplotlib.pyplot as plt
 from .plot_utils import *
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import data_access as data  # noqa: E402
-
-
-def plot_behavioral_streams(dataObject):
-    """ plot behavioral streams including running,
-        licks, rewards, and df/f streams.
-
-    Parameters
-    ----------
-        dataObject : (BehaviorSesson, BehaviorOphysExperiment)
-            Objects provided via allensdk.brain_observatory
-            module
-    Returns
-    ----------
-        MatPlotLib: figure and axes
-    """
-    experiment = False
-    fig, axes = None, None
-
-    if "ophys_experiment_id" in dataObject.list_data_attributes_and_methods():
-        print("experiment=True")
-        fig, axes = plt.subplots(3, 1, figsize=(15, 8), sharex=True)
-        experiment = True
-    else:
-        fig, axes = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
-
-    for ax in axes:
-        plot_stimuli(dataObject, ax)
-
-    plot_running(dataObject, axes[0])
-    plot_licks(dataObject, axes[1])
-    plot_rewards(dataObject, axes[1])
-
-    axes[1].set_title("licks and rewards")
-    axes[1].set_yticks([])
-    axes[1].legend(["licks", "rewards"])
-
-    if experiment:
-        plot_pupil_area(dataObject, axes[2])
-
-    fig.tight_layout()
-    return fig, axes
+import brain_observatory_utilities.datasets.behavior.data_access as data  # noqa: E402
 
 
 def plot_running(dataObject, ax=None):
