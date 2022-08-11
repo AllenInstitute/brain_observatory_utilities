@@ -1,4 +1,4 @@
-# mindscope_utilities
+# brain_observatory_utilities
 Tools for analysis, manipulation and visualization of  Brain Observatory data availible via the AllenSDK.
 
 Functions in this repository depend on the AllenSDK
