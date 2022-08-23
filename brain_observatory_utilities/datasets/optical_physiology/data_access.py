@@ -115,3 +115,4 @@ def get_transparent_segmentation_mask(ophysObject):
     transparent_mask[segmentation_mask[0] == 1] = 1
     return transparent_mask
 
+
