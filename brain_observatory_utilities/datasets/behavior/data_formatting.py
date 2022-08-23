@@ -217,7 +217,7 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
     stimulus_presentation: Pandas.DataFrame
         with 'reward_rate_trials' column
 
-    'reward_rate_trials' is calculated by the SDK based on the rolling reward rate over trials (not stimulus presentations)
+    'reward_rate' is calculated by the SDK based on the rolling reward rate over trials (not stimulus presentations)
     https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/trials_processing.py#L941
     '''
 
@@ -240,7 +240,7 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
     for i in range(len(stimulus_presentations) - len(reward_rate_by_frame)):
         reward_rate_by_frame.append(reward_rate_by_frame[-1])
 
-    stimulus_presentations['reward_rate_trials'] = reward_rate_by_frame
+    stimulus_presentations['reward_rate'] = reward_rate_by_frame
     return stimulus_presentations
 
 
