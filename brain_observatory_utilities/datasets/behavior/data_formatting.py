@@ -1,6 +1,7 @@
 import pandas as pd
 from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
 from brain_observatory_utilities.utilities.general_utilities import get_trace_average
+import brain_observatory_utilities.datasets.behavior.data_access as data_access
 
 
 
@@ -92,7 +93,7 @@ def add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_trackin
         stimulus_presentations = add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_tracking, column_to_use='pupil_area')  # noqa E501
     '''
 
-    eye_tracking = get_pupil_data(eye_tracking, interpolate_likely_blinks=True, normalize_to_gray_screen=True, zscore=False,
+    eye_tracking = data_access.get_pupil_data(eye_tracking, interpolate_likely_blinks=True, normalize_to_gray_screen=True, zscore=False,
                    interpolate_to_ophys=False, ophys_timestamps=None, stimulus_presentations=stimulus_presentations)
 
     eye_tracking_timeseries = eye_tracking[column_to_use].values
