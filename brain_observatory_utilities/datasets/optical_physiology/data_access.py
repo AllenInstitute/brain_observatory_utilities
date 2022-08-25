@@ -4,24 +4,6 @@ from brain_observatory_utilities.datasets.behavior.data_access import *
 import brain_observatory_utilities.utilities.general_utilities as gen_utils
 
 
-def get_pupil_area_timeseries(ophysObject):
-    """gets mouse's pupil area timeseries
-
-    Parameters
-    ----------
-    ophysObject : (BehaviorOphysExperiment)
-        Object provided via allensdk.brain_observatory
-        module
-
-    Returns
-    -------
-   tuple
-        pupil area (pixels ^2), timestamps
-    """
-    pupil_area = ophysObject.eye_tracking["pupil_area"].values
-    timestamps = ophysObject.eye_tracking["timestamps"].values
-    return pupil_area, timestamps
-
 
 def get_dff_trace_timeseries(ophysObject, cell_specimen_id=None):
     """ By default will return the average dff trace (mean
@@ -132,4 +114,5 @@ def get_transparent_segmentation_mask(ophysObject):
     transparent_mask[:] = np.nan
     transparent_mask[segmentation_mask[0] == 1] = 1
     return transparent_mask
+
 
