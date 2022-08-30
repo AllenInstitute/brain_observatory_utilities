@@ -7,7 +7,7 @@ from brain_observatory_utilities.utilities import general_utilities
 from brain_observatory_utilities.datasets.behavior import data_formatting as behavior
 
 
-def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
+def build_tidy_cell_df_ophys(ophys_experiment, exclude_invalid_rois=True):
     '''
     Builds a tidy dataframe describing activity for every cell in ophys_experiment.
     Tidy format is defined as one row per observation.
@@ -64,6 +64,105 @@ def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
             cell_df[cell_id] = pd.Categorical(
                 cell_df[cell_id],
                 categories=cell_specimen_table[cell_id].unique()
+            )
+
+        # append the dataframe for this cell to the list of cell dataframes
+        list_of_cell_dfs.append(cell_df)
+
+    # concatenate all dataframes in the list
+    tidy_df = pd.concat(list_of_cell_dfs)
+
+    # return the tidy dataframe
+    return tidy_df
+
+
+def get_spike_rate_df(session, bin_size=0.01):
+    """
+    Create dataframe containing spike rates for all units across the full behavior session (instead of trials)
+
+    session: SDK VBN session object
+    bin_size: bin size, in seconds, to use when creating spike rate
+                0.001 = 1ms, 0.01 = 10ms, 1 = 1s (spikes / second)
+    """
+
+    # get data
+    units = session.get_units()
+    spike_times = session.spike_times.copy()
+    stim_table = session.stimulus_presentations.copy()
+    # limit stim table to behavior block
+    stim_table = stim_table[stim_table.stimulus_block == 0]
+    # create timeframe from start to end of behavior block
+    start_time = stim_table.start_time.values[0]
+    end_time = stim_table.stop_time.values[-1]
+    behavior_duration = end_time - start_time
+
+    # Get dimensions of output array
+    unit_ids = units.index.values[:20]
+    neuron_number = len(unit_ids)
+    num_time_bins = int(behavior_duration / bin_size) + 1
+
+    # Initialize array
+    unit_array = np.zeros((neuron_number, num_time_bins))
+
+    # Loop through units and trials and store spike counts for every unit
+    for i, unit_id in enumerate(unit_ids):
+        # grab spike times for this unit
+        unit_spike_times = spike_times[unit_id]
+        spike_rate, time_vector = ephys.makePSTH(unit_spike_times, [start_time], behavior_duration, binSize=bin_size)
+        unit_array[i, :] = spike_rate
+
+    # turn it into a df where each row is a uit and column contains entire spike rate trace
+    # to match format of ophys dff_traces table
+    spike_rate_df = pd.DataFrame(index=units.index, columns=['spike_rate'])
+    for i, unit_id in enumerate(unit_ids):
+        spike_rate_df.loc[unit_id, 'spike_rate'] = unit_array[i, :]
+
+    return spike_rate_df
+
+
+def build_tidy_cell_df_ephys(ophys_experiment, exclude_invalid_rois=True):
+    '''
+    Builds a tidy dataframe describing activity for every cell in ephys session.
+    Tidy format is defined as one row per observation.
+    Thus, the output dataframe will be n_units x n_timepoints long
+
+    Parameters:
+    -----------
+    ophys_experiment : AllenSDK Neurpixels session object
+
+    Returns:
+    --------
+    Pandas.DataFrame
+        Tidy Format (one observation per row) with the following columns:
+            * timestamps (float) : the ophys timestamps
+            * cell_specimen_id (int) : the cell specimen id
+            * spike_rate (float) : measured spike rate for every timestep
+    '''
+
+    spike_times_df, timestamps = get_spike_rates(ophys_experiment)
+    spike_times_df.index.name = 'cell_specimen_id'
+
+    # make an empty list to populate with dataframes for each cell
+    list_of_cell_dfs = []
+
+    # iterate over each individual cell
+    for idx, row in spike_times_df:
+        cell_specimen_id = row['cell_specimen_id']
+
+        # build a tidy dataframe for this cell
+        cell_df = pd.DataFrame({
+            'timestamps': timestamps,
+            'spike_rate': spike_times_df.loc[cell_specimen_id]['spike_rate'],  # noqa E501
+        })
+
+        # Make the cell_roi_id and cell_specimen_id columns categorical.
+        # This will reduce memory useage since the columns
+        # consist of many repeated values.
+        for cell_id in ['cell_specimen_id']:
+            cell_df[cell_id] = np.int32(row[cell_id])
+            cell_df[cell_id] = pd.Categorical(
+                cell_df[cell_id],
+                categories = spike_times_df[cell_id].unique()
             )
 
         # append the dataframe for this cell to the list of cell dataframes
@@ -206,10 +305,13 @@ def get_stimulus_response_xr(ophys_experiment,
     elif 'lick' in data_type:
         data = get_licks_df(ophys_experiment) # create dataframe with info about licks for each stimulus timestamp
         data[unique_id_string] = 0  # only one value because only one trace
-    else:
+    elif ('dff' in data_type) or ('events' in data_type) or ('filtered_events' in data_type):
         # load neural data
         data = build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=exclude_invalid_rois)
         # all cell specimen ids in an ophys_experiment
+        unique_ids = np.unique(data['cell_specimen_id'].values)
+    elif ('spike_times' in data_type) or ('spike_rate' in data_type):
+        data = build_tidy_cell_df_ephys(ophys_experiment)
         unique_ids = np.unique(data['cell_specimen_id'].values)
 
     # get native sampling rate if one is not provided
