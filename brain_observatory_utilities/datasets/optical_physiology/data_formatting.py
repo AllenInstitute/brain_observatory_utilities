@@ -177,6 +177,9 @@ def get_stimulus_response_xr(ophys_experiment,
 
     # load stimulus_presentations table
     stimulus_presentations = ophys_experiment.stimulus_presentations
+    # if the dataset is from VisualBehaviorNeuropixels, limit to the active change detection block (block 0)
+    if 'stimulus_block' in stimulus_presentations.keys():
+        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block==0]
 
     # get event times and event ids (original order in the stimulus flow)
     event_times, event_ids = get_event_timestamps(
