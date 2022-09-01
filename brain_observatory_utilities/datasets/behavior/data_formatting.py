@@ -7,6 +7,22 @@ import brain_observatory_utilities.datasets.behavior.data_access as data_access
 
 
 
+def limit_to_behavior_session_block(stimulus_presentations): 
+    '''
+    Function to limit stimulus presentations table to only the active change detection behavior block (stimulus_block=0)
+    
+    Args:
+        stimulus_presentations (pd.DataFrame): SDK session dataframe of stimulus presentations.
+
+    Returns:
+        stimulus_presentations dataframe restricted to stimuli where stimulus_block==0. 
+    '''
+    
+    if 'stimulus_block' in stimulus_presentations.keys():
+        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block==0]
+    return stimulus_presentations
+
+
 def add_mean_running_speed_to_stimulus_presentations(stimulus_presentations,
                                                      running_speed,
                                                      time_window=[0, 0.75]):
@@ -213,6 +229,35 @@ def add_licks_to_stimulus_presentations(stimulus_presentations, licks, time_wind
     return stimulus_presentations
 
 
+def add_reward_rate_to_trials(trials):
+    '''
+    Parameters:
+    ____________
+    trials: Pandas.DataFrame, SDK trials object
+
+    Returns:
+    ___________
+    trials: Pandas.DataFrame
+        with 'reward_rate_trials' column
+
+    'reward_rate' is calculated by the SDK based on the rolling reward rate over trials (not stimulus presentations)
+    https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/trials_processing.py#L941
+    '''
+    
+    # need to calculate response latency because SDK doesnt include it for VBN
+    if 'change_time_no_display_delay' in trials.keys(): # this means its from VBN
+        trials['response_latency'] = trials.response_time-trials.change_time_no_display_delay
+        trials['change_time'] = trials.change_time_no_display_delay
+    
+    last_time = 0
+    reward_rate_by_frame = []
+    if 'reward_rate' not in trials:
+        trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values,
+                                                      trials['start_time'],
+                                                      window=.5)
+    return trials
+
+        
 def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials):
     '''
     Parameters:
@@ -230,7 +275,15 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials):
     'reward_rate' is calculated by the SDK based on the rolling reward rate over trials (not stimulus presentations)
     https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/trials_processing.py#L941
     '''
+    
+    # limit to behavior block otherwise passive stimuli will be included and throw off the rolling reward rate
+    stimulus_presentations = limit_to_behavior_session_block(stimulus_presentations)
 
+    # need to calculate response latency because SDK doesnt include it for VBN
+    if 'change_time_no_display_delay' in trials.keys(): # this means its from VBN
+        trials['response_latency'] = trials.response_time-trials.change_time_no_display_delay
+        trials['change_time'] = trials.change_time_no_display_delay
+    
     last_time = 0
     reward_rate_by_frame = []
     if 'reward_rate' not in trials:
