@@ -99,16 +99,34 @@ class ReceptiveFieldMapping_VBN(ReceptiveFieldMapping):
             unit_ids = self.unit_ids
             metrics_df = self.empty_metrics_table()
 
-            if len(self.stim_table) > 0:
-                metrics_df.loc[:, ['azimuth_rf',
-                                   'elevation_rf',
-                                   'width_rf',
-                                   'height_rf',
-                                   'area_rf',
-                                   'p_value_rf',
-                                   'on_screen_rf',
-                                   'is_inverted'
-                                   ]] = [self._get_rf_stats(unit) for unit in unit_ids]
+            # if len(self.stim_table) > 0:
+            #     metrics_df.loc[:, ['azimuth_rf',
+            #                        'elevation_rf',
+            #                        'width_rf',
+            #                        'height_rf',
+            #                        'area_rf',
+            #                        'p_value_rf',
+            #                        'on_screen_rf',
+            #                        'is_inverted'
+            #                        ]] = [self._get_rf_stats(unit) for unit in unit_ids]
+            unit_rf_metrics = []
+            for unit in self.unit_ids:
+                try:
+                    unit_stats = self._get_rf_stats(unit)
+                    unit_rf_metrics.append(unit_stats)
+                except:
+                    print('failed to fit unit')
+                    unit_rf_metrics.append([np.nan]*8)
+            
+            metrics_df.loc[:, ['azimuth_rf',
+                                'elevation_rf',
+                                'width_rf',
+                                'height_rf',
+                                'area_rf',
+                                'p_value_rf',
+                                'on_screen_rf',
+                                'is_inverted'
+                                ]] = unit_rf_metrics
                 # metrics_df['firing_rate_rf'] = [self._get_overall_firing_rate(unit) for unit in unit_ids]
                 # metrics_df['fano_rf'] = [self._get_fano_factor(unit, self._get_preferred_condition(unit))
                 #                          for unit in unit_ids]
