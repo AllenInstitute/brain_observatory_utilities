@@ -1,0 +1,10 @@
+
+.idea/
+
+brain_observatory_utilities.egg-info/
+
+brain_observatory_utilities/utilities/__pycache__/
+
+brain_observatory_utilities/__pycache__/
+
+*.pyc
