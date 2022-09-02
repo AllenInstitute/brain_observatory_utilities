@@ -345,6 +345,8 @@ def add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trial
     # for each stimulus_presentation, find the change_time that is closest to the start time
     # then add the corresponding trials_id to stimulus_presentations
     trials = trials.copy()
+    if 'change_time' not in trials.keys():
+        trials['change_time'] = trials['change_time_no_display_delay']
     stimulus_presentations = stimulus_presentations.copy()
     for row in range(len(stimulus_presentations)):
         this_start_time = stimulus_presentations.iloc[row].start_time
@@ -524,7 +526,7 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
     RETURNS: stimulus_presentations
     '''
     stimulus_times = stimulus_presentations["start_time"].values
-    change_times = stimulus_presentations.query('is_change')['start_time'].values
+    change_times = stimulus_presentations[stimulus_presentations['is_change']==True]['start_time'].values
     time_from_last_change = utilities.time_from_last(stimulus_times, change_times)
     stimulus_presentations["time_from_last_is_change"] = time_from_last_change
 
@@ -541,7 +543,7 @@ def add_time_from_last_omission_to_stimulus_presentations(stimulus_presentations
     RETURNS: stimulus_presentations
     '''
     stimulus_times = stimulus_presentations["start_time"].values
-    omission_times = stimulus_presentations.query('omitted')['start_time'].values
+    omission_times = stimulus_presentations[stimulus_presentations['omitted']==True]['start_time'].values
     time_from_last_omission = utilities.time_from_last(stimulus_times, omission_times)
     stimulus_presentations["time_from_last_omitted"] = time_from_last_omission
 
@@ -680,6 +682,9 @@ def add_behavior_info_to_stimulus_presentations(stimulus_presentations, trials, 
     :return:
     """
 
+    trials = trials.copy()
+    if 'change_time' not in trials.keys():
+        trials['change_time'] = trials['change_time_no_display_delay']
     stimulus_presentations = stimulus_presentations.copy()
     # add columns from trials table: ['change_time', 'hit', 'miss', 'false_alarm', 'correct_reject', 'reward_time', 'reward_volume']
     # applied only to stimulus presentations corresponding to change and sham change times (go and catch)
@@ -716,6 +721,10 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     :return:
     """
 
+    trials = trials.copy()
+    if 'change_time' not in trials.keys():
+        trials['change_time'] = trials['change_time_no_display_delay']
+        
     # add columns indicating wither previous or subsequent stimulus presentations are a change or omission
     stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
     stimulus_presentations['post_change'] = stimulus_presentations['is_change'].shift(1)
