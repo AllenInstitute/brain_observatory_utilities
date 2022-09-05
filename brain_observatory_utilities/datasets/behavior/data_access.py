@@ -1,7 +1,30 @@
 import numpy as np
-import scipy
 
 import brain_observatory_utilities.datasets.optical_physiology.data_formatting as ophys
+
+
+def get_stimulus_block_description(stimulus_block, dataset='VBN'):
+    """
+    For a given dataset, will return a string description of what was shown during the provided stimulus_block.
+    Currently only applies to dataset='VBN' because stimulus_block has not yet been applied to VBO
+
+    :param stimulus_block: int between 0 and 5
+    :param dataset: 'VBN' = Visual Behavior Neuropixels, 'VBO' = Visual Behavior Ophys
+    :return: string description of what stimulus was shown during the provided stimulus_block
+    """
+    if dataset == 'VBO':
+        print('stimulus block is not currently used in the Visual Behavior Ophys dataset')
+        stimulus_block_lookup_dict = {}
+    elif dataset == 'VBN':
+        stimulus_block_lookup_dict = {0: 'change detection active behavior',
+                                      1: '10 seconds gray screen',
+                                      2: 'gabor patches receptive field mapping',
+                                      3: '5 minutes gray screen',
+                                      4: 'full field flashes',
+                                      5: 'change detection passive replay'}
+        print(stimulus_block_lookup_dict[stimulus_block], 'is shown during Visual Behavior Neuropixels stimulus_block', stimulus_block)
+    return stimulus_block_lookup_dict[stimulus_block]
+
 
 def get_stimulus_name(dataObject):
     """gets the stimulus name for a dataset object
