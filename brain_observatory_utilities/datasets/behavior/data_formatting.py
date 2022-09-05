@@ -1,7 +1,9 @@
+import numpy as np
 import pandas as pd
+
+import brain_observatory_utilities.utilities.general_utilities as utilities
+import brain_observatory_utilities.datasets.stimulus_alignment as stimulus_alignment
 from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
-from brain_observatory_utilities.utilities.general_utilities import get_trace_average
-import brain_observatory_utilities.datasets.behavior.data_access as data_access
 
 
 
@@ -47,7 +49,7 @@ def add_mean_running_speed_to_stimulus_presentations(stimulus_presentations,
     '''
 
     stim_running_speed = stimulus_presentations.apply(
-        lambda row: get_trace_average(
+        lambda row: utilities.get_trace_average(
             running_speed['speed'].values,
             running_speed['timestamps'].values,
             row["start_time"] + time_window[0],
@@ -98,7 +100,7 @@ def add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_trackin
 
     eye_tracking_timeseries = eye_tracking[column_to_use].values
     mean_pupil_around_stimulus = stimulus_presentations.apply(
-        lambda row: get_trace_average(
+        lambda row: utilities.get_trace_average(
             eye_tracking_timeseries,
             eye_tracking['timestamps'].values,
             row["start_time"] + time_window[0],
@@ -322,3 +324,99 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
 
     return stimulus_presentations
 
+
+def create_lick_rate_df(dataset, bin_size=6):
+    '''
+    Returns a dataframe containing columns for 'timestamps', 'licks', and 'lick_rate'. where values are from
+    'licks' is a binary array of the length of stimulus timestamps where frames with no lick are 0 and frames with a lick are 1,
+    'lick_rate' contains values of 'licks' averaged over a rolling window using the provided 'bin_size' in units of acquisition frames
+    Can be used to compute event triggered average lick rate using brain_observatory_utilities.utilities.general_utilities.event_triggered_response
+
+    Parameters:
+    -----------
+    dataset: obj
+        AllenSDK BehaviorOphysExperiment object, BehaviorSession object, or BehaviorEcephysSession object
+        See:
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_session.py  # noqa E501
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
+    bin_size: int
+        number of frames (timestamps) to average over to get rolling lick rate
+        default = 6 frames to give lick rate in licks / 100ms (assuming 60Hz acquisition rate for licks)
+    Returns:
+    --------
+    Pandas.DataFrame with columns 'timestamps', 'licks', and 'lick_rate' in units of licks / 100ms
+    '''
+
+    timestamps = dataset.stimulus_timestamps.copy()
+    licks = dataset.licks.copy()
+    lick_array = np.zeros(timestamps.shape)
+    lick_array[licks.frame.values] = 1
+    licks_df = pd.DataFrame(data=timestamps, columns=['timestamps'])
+    licks_df['licks'] = lick_array
+    licks_df['lick_rate'] = licks_df['licks'].rolling(window=bin_size, min_periods=1, win_type='triang').mean()
+
+    return licks_df
+
+
+def filter_eye_tracking(eye_tracking, interpolate_likely_blinks=False, normalize_to_gray_screen=False, zscore=False,
+                   interpolate_to_ophys=False, ophys_timestamps=None, stimulus_presentations=None):
+    """
+    removes 'likely_blinks' from all columns in eye_tracking and converts pupil_area to pupil_diameter and pupil_radius
+    interpolates over NaNs resulting from removing likely_blinks if interpolate = true
+    :param eye_tracking: eye_tracking attribute of AllenSDK BehaviorOphysExperiment object
+    :param column_to_use: 'pupil_area', 'pupil_width', 'pupil_diameter', or 'pupil_radius'
+                            'pupil_area' and 'pupil_width' are existing columns of the eye_tracking table
+                            'pupil_diameter' and 'pupil_radius' are computed from 'pupil_area' column
+    :param interpolate: Boolean, whether or not to interpolate points where likely_blinks occured
+
+    :return:
+    """
+    import scipy
+
+    # set index to timestamps so they dont get overwritten by subsequent operations
+    eye_tracking = eye_tracking.set_index('timestamps')
+
+    # compute pupil_diameter and pupil_radius from pupil_area
+    eye_tracking['pupil_diameter'] = np.sqrt(eye_tracking.pupil_area) / np.pi  # convert pupil area to pupil diameter
+    eye_tracking['pupil_radius'] = np.sqrt(eye_tracking['pupil_area'] * (1 / np.pi))  # convert pupil area to pupil radius
+
+    # set all timepoints that are likely blinks to NaN for all eye_tracking columns
+    if True in eye_tracking.likely_blink.unique(): # only can do this if there are likely blinks to filter out
+        eye_tracking.loc[eye_tracking['likely_blink'], :] = np.nan
+
+    # add timestamps column back in
+    eye_tracking['timestamps'] = eye_tracking.index.values
+
+    # interpolate over likely blinks, which are now NaNs
+    if interpolate_likely_blinks:
+        eye_tracking = eye_tracking.interpolate()
+
+    # divide all columns by average of gray screen period prior to behavior session
+    if normalize_to_gray_screen:
+        assert stimulus_presentations is not None, 'must provide stimulus_presentations if normalize_to_gray_screen is True'
+        spontaneous_frames = stimulus_alignment.get_spontaneous_frames(stimulus_presentations,
+                                                             eye_tracking.timestamps.values,
+                                                             gray_screen_period_to_use='before')
+        for column in eye_tracking.keys():
+            if (column != 'timestamps') and (column!='likely_blink'):
+                gray_screen_mean_value = np.nanmean(eye_tracking[column].values[spontaneous_frames])
+                eye_tracking[column] = eye_tracking[column] / gray_screen_mean_value
+    # z-score pupil data
+    if zscore:
+        for column in eye_tracking.keys():
+            if (column != 'timestamps') and (column != 'likely_blink'):
+                eye_tracking[column] = scipy.stats.zscore(eye_tracking[column], nan_policy='omit')
+
+    # interpolate to ophys timestamps
+    if interpolate_to_ophys:
+        assert ophys_timestamps is not None, 'must provide ophys_timestamps if interpolate_to_ophys is True'
+        eye_tracking_ophys_time = pd.DataFrame({'timestamps': ophys_timestamps})
+        for column in eye_tracking.keys():
+            if (column != 'timestamps') and (column != 'likely_blink'):
+                f = scipy.interpolate.interp1d(eye_tracking['timestamps'], eye_tracking[column], bounds_error=False)
+                eye_tracking_ophys_time[column] = f(eye_tracking_ophys_time['timestamps'])
+                eye_tracking_ophys_time[column].fillna(method='ffill', inplace=True)
+        eye_tracking = eye_tracking_ophys_time
+
+    return eye_tracking

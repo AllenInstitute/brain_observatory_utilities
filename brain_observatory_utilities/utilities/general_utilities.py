@@ -14,8 +14,7 @@ def get_trace_average(trace, timestamps, start_time, stop_time):
 
 
 def average_df_timeseries_values(dataframe, values_column):
-    """calculates the mean timeseries from a dataframe
-        column. 
+    """calculates the mean timeseries from a dataframe column.
 
     Parameters
     ----------
