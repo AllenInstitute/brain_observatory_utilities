@@ -73,9 +73,9 @@ def get_stimulus_response_xr(dataset,
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
     data_type: str
-        neural or behavioral data type to extract, options are: dff (default), events, filtered_events,
-                                                                running_speed, pupil_diameter, lick_rate,
-                                                                spike_rate (for VBN ecephys data)
+        neural or behavioral data type to extract, options are: 'dff' (default), 'events', 'filtered_events',
+                                                                'running_speed', 'pupil_width', 'lick_rate',
+                                                                'spike_rate' (for VBN ecephys data)
     event_type: str
         event type to align to, which can be found in columns of ophys_experiment.stimulus_presentations df.
         options are: 'all' (default) - gets all stimulus trials
@@ -412,9 +412,9 @@ def get_stimulus_response_df(dataset,
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
     data_type: str
-        neural or behavioral data type to extract, options are: dff (default), events, filtered_events,
-                                                                running_speed, pupil_diameter, lick_rate,
-                                                                spike_rate (for VBN ecephys data)
+        neural or behavioral data type to extract, options are: 'dff' (default), 'events', 'filtered_events',
+                                                                'running_speed', 'pupil_width', 'lick_rate',
+                                                                'spike_rate' (for VBN ecephys data)
     event_type: str
         event type to align to, which can be found in columns of ophys_experiment.stimulus_presentations df.
         options are: 'all' (default) - gets all stimulus trials
@@ -472,7 +472,6 @@ def get_stimulus_response_df(dataset,
                                                     **kwargs)
 
     # set up identifier columns depending on whether behavioral or neural data is being used
-    # if (data_type == 'running_speed') or (data_type == 'pupil_diameter') or (data_type == 'lick_rate'):
     if ('lick' in data_type) or ('pupil' in data_type) or ('running' in data_type):
         # set up variables to handle only one timeseries per event instead of multiple cell_specimen_ids
         unique_id_string = 'trace_id'  # create a column to take the place of 'cell_specimen_id'
@@ -510,20 +509,16 @@ def get_stimulus_response_df(dataset,
         'trace_timestamps': list(trace_timestamps),
         'mean_response': stacked_response.data,
         'baseline_response': stacked_baseline.data,
-        'p_value_gray_screen': stacked_pval_gray_screen,
-    })
+        'p_value_gray_screen': stacked_pval_gray_screen})
 
-    # save frame rate, time window and other metadata for reference
-    if output_sampling_rate is not None:
-        stimulus_response_df['sampling_rate'] = output_sampling_rate
-    else:
-        if ('dff' in data_type) or ('events' in data_type) or ('filtered_events' in data_type):
-            stimulus_response_df['sampling_rate'] = dataset.metadata['ophys_frame_rate']
-        else:
-            stimulus_response_df['sampling_rate'] = 1/np.diff(trace_timestamps)
+    # save data_type, event_type, sampling rate, time window and other metadata for reference
     stimulus_response_df['data_type'] = data_type
     stimulus_response_df['event_type'] = event_type
     stimulus_response_df['interpolate'] = interpolate
+    if output_sampling_rate is None:
+        output_sampling_rate = 1 / np.diff(trace_timestamps[0, :]).mean()
+    else:
+        output_sampling_rate = output_sampling_rate
     stimulus_response_df['output_sampling_rate'] = output_sampling_rate
     stimulus_response_df['response_window_duration'] = response_window_duration
     stimulus_response_df['spike_rate_bin_size'] = spike_rate_bin_size

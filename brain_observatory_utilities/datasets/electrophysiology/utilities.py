@@ -18,7 +18,7 @@ def makePSTH(spikes, startTimes, windowDur, binSize=0.001):
                 each time bin aligned to the start times;
             bins are the bin edges as defined by numpy histogram
     '''
-    bins = np.arange(0,windowDur+binSize,binSize)
+    bins = np.arange(0, windowDur+binSize, binSize)
     counts = np.zeros(bins.size-1)
     for start in startTimes:
         startInd = np.searchsorted(spikes, start)
@@ -111,7 +111,7 @@ def get_continous_spike_rate_for_units(session, spike_rate_bin_size=0.01, stimul
     for i, unit_id in enumerate(unit_ids):
         # grab spike times for this unit
         unit_spike_times = spike_times[unit_id]
-        spike_rate, time_vector = makePSTH(unit_spike_times, [start_time], behavior_duration, binSize=spike_rate_bin_size)
+        spike_rate, timestamps = makePSTH(unit_spike_times, [start_time], behavior_duration, binSize=spike_rate_bin_size)
         unit_array[i, :] = spike_rate
 
     # turn it into a df where each row is a uit and column contains entire spike rate trace
@@ -121,7 +121,7 @@ def get_continous_spike_rate_for_units(session, spike_rate_bin_size=0.01, stimul
         spike_rate_df.loc[unit_id, 'spike_rate'] = unit_array[i, :]
     spike_rate_df.index.name = 'unit_id'
 
-    return spike_rate_df
+    return spike_rate_df, timestamps
 
 
 def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
@@ -154,18 +154,16 @@ def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
     list_of_cell_dfs = []
 
     # iterate over each individual unit
-    for idx, row in spike_rate_df:
-        cell_specimen_id = row['unit_id']
-
+    for unit_id in spike_rate_df.index.values:
         # build a tidy dataframe for this unit
         cell_df = pd.DataFrame({'timestamps': timestamps,
-            'spike_rate': spike_rate_df.loc[cell_specimen_id]['spike_rate']})  # noqa E501
+                                'spike_rate': spike_rate_df.loc[unit_id]['spike_rate']})  # noqa E501
 
         # Make the unit_id column categorical
         # This will reduce memory useage since the columns
         # consist of many repeated values.
-        cell_df['unit_id'] = np.int32(row['unit_id'])
-        cell_df['unit_id'] = pd.Categorical(cell_df['unit_id'], categories=spike_rate_df['unit_id'].unique())
+        cell_df['unit_id'] = np.int32(unit_id)
+        cell_df['unit_id'] = pd.Categorical(cell_df['unit_id'], categories=spike_rate_df.index.unique())
 
         # append the dataframe for this cell to the list of cell dataframes
         list_of_cell_dfs.append(cell_df)
