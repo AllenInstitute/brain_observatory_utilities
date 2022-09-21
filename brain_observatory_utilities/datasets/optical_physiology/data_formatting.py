@@ -75,9 +75,9 @@ def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
     # set types (categorical better for memory)
     for col in trace_cols:
         tidy_df[col] = tidy_df[col].astype('float64')
+    tidy_df.reset_index(inplace= True, drop=False)
     tidy_df["cell_roi_id"] = tidy_df.cell_roi_id.astype('category')
-    tidy_df.reset_index(inplace= True, drop=True)
-    tidy_df["cell_specimen_id"] = tidy_df["cell_roi_id"]
+    tidy_df["cell_specimen_id"] = tidy_df.cell_specimen_id.astype('category')
 
     return tidy_df
 
