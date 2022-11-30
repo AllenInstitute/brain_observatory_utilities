@@ -2,26 +2,36 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import xarray
+from copy import deepcopy
 
 from brain_observatory_utilities.utilities import general_utilities
 from brain_observatory_utilities.datasets.behavior import data_formatting as behavior
 
-
 def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
-    '''
-    Builds a tidy dataframe describing activity for every cell in ophys_experiment.
-    Tidy format is defined as one row per observation.
+    """
+    Builds a tidy dataframe describing activity for every cell in 
+    ophys_experiment. Tidy format is defined as one row per observation.
     Thus, the output dataframe will be n_cells x n_timetpoints long
+
+    Updated 2022:
+    * Handles case where cell_specimen_id is NaN, no container assigned.
+      Just set equal to cell_roi_id for now to work with rest of code
+    * Will only look at trace columns actually in experiment
+    * Uses explode for to avoid for loops
 
     Parameters:
     -----------
     ophys_experiment : AllenSDK BehaviorOphysExperiment object
         A BehaviorOphysExperiment instance
-        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
+        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
     exclude_invalid_rois : bool
-        If True (default), only includes ROIs that are listed as `valid_roi = True` in the ophys_experiment.cell_specimen_table.
+        If True (default), only includes ROIs that are listed as 
+        `valid_roi = True` in the ophys_experiment.cell_specimen_table.
         If False, include all ROIs.
-        Note that invalid ROIs are only exposed for internal AllenInstitute users, so passing `False` will not change behavior for external users
+
+        Note: that invalid ROIs are only exposed for internal 
+        AllenInstitute users, so passing `False` will not change 
+        behavior for external users
 
     Returns:
     --------
@@ -33,48 +43,43 @@ def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
             * dff (float) : measured deltaF/F for every timestep
             * events (float) : extracted events for every timestep
             * filtered events (float) : filtered (convolved with half-gaussian) events for every timestep
-    '''
+    """
+    dff_traces = deepcopy(ophys_experiment.dff_traces)
 
-    # make an empty list to populate with dataframes for each cell
-    list_of_cell_dfs = []
+    trace_cols = ["dff","events","filtered_events"]
 
-    # query on valid_roi if exclude_invalid_rois == True
+    # only keep columns found in experiment object
+    trace_cols = list(set(dff_traces.columns).intersection(trace_cols))
+
+    if dff_traces.index.isna().all():
+        dff_traces.set_index("cell_roi_id", drop=False, inplace=True)
+        #dff_traces.index.rename("cell_specimen_id",inplace=True)
+        dff_traces.rename_axis("cell_specimen_id", inplace=True)
+    #print(dff_traces.head(1))
+
     if exclude_invalid_rois:
-        cell_specimen_table = ophys_experiment.cell_specimen_table.query('valid_roi').reset_index()  # noqa E501
+        # cell roi id always present, use instead of cell_specimen
+        selected_rois = ophys_experiment.cell_specimen_table.query('valid_roi') \
+                        ["cell_roi_id"].to_list()
     else:
-        cell_specimen_table = ophys_experiment.cell_specimen_table.reset_index()  # noqa E501
+        selected_rois = ophys_experiment.cell_specimen_table["cell_roi_id"]
 
-    # iterate over each individual cell
-    for idx, row in cell_specimen_table.iterrows():
-        cell_specimen_id = row['cell_specimen_id']
+    # filter rois
+    dff_traces = dff_traces.query("cell_roi_id in @selected_rois")
 
-        # build a tidy dataframe for this cell
-        cell_df = pd.DataFrame({
-            'timestamps': ophys_experiment.ophys_timestamps,
-            'dff': ophys_experiment.dff_traces.loc[cell_specimen_id]['dff'] if cell_specimen_id in ophys_experiment.dff_traces.index else [np.nan] * len(ophys_experiment.ophys_timestamps),  # noqa E501
-            'events': ophys_experiment.events.loc[cell_specimen_id]['events'] if cell_specimen_id in ophys_experiment.events.index else [np.nan] * len(ophys_experiment.ophys_timestamps),  # noqa E501
-            'filtered_events': ophys_experiment.events.loc[cell_specimen_id]['filtered_events'] if cell_specimen_id in ophys_experiment.events.index else [np.nan] * len(ophys_experiment.ophys_timestamps),  # noqa E501
-        })
+    # use explode method to expand list of dff traces
+    n_cells = len(dff_traces)
+    tidy_df = dff_traces.explode(trace_cols)
+    tidy_df["timestamps"] = np.tile(ophys_experiment.ophys_timestamps, n_cells)
 
-        # Make the cell_roi_id and cell_specimen_id columns categorical.
-        # This will reduce memory useage since the columns
-        # consist of many repeated values.
-        for cell_id in ['cell_roi_id', 'cell_specimen_id']:
-            cell_df[cell_id] = np.int32(row[cell_id])
-            cell_df[cell_id] = pd.Categorical(
-                cell_df[cell_id],
-                categories=cell_specimen_table[cell_id].unique()
-            )
+    # set types (categorical better for memory)
+    for col in trace_cols:
+        tidy_df[col] = tidy_df[col].astype('float64')
+    tidy_df.reset_index(inplace= True, drop=False)
+    tidy_df["cell_roi_id"] = tidy_df.cell_roi_id.astype('category')
+    tidy_df["cell_specimen_id"] = tidy_df.cell_specimen_id.astype('category')
 
-        # append the dataframe for this cell to the list of cell dataframes
-        list_of_cell_dfs.append(cell_df)
-
-    # concatenate all dataframes in the list
-    tidy_df = pd.concat(list_of_cell_dfs)
-
-    # return the tidy dataframe
     return tidy_df
-
 
 def get_event_timestamps(
         stimulus_presentation,
