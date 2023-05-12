@@ -86,13 +86,13 @@ def plot_rewards(dataObject, ax=None, reward_type="all"):
     reward_timesestamps = data.get_reward_timestamps(dataObject,
                                                      reward_type=reward_type)
     ax.plot(
-            reward_timesestamps,
-            np.zeros_like(reward_timesestamps),
-            marker="o",
-            linestyle="none",
-            color='b',
-            markersize=6,
-            alpha=0.25,
+        reward_timesestamps,
+        np.zeros_like(reward_timesestamps),
+        marker="o",
+        linestyle="none",
+        color='b',
+        markersize=6,
+        alpha=0.25,
     )
     return ax
 
@@ -113,7 +113,7 @@ def plot_stimuli(dataObject, ax=None):
     """
     if ax is None:
         fig, ax = plt.subplots()
-        
+
     for _, stimulus in dataObject.stimulus_presentations.iterrows():
         ax.axvspan(stimulus["start_time"],
                    stimulus["stop_time"], alpha=0.5)
@@ -149,7 +149,6 @@ def plot_pupil_area(dataObject, ax=None):
     ax.set_title(DATASTREAM_STYLE_DICT['pupil_area']['label'])  # noqa: F405
     ax.set_ylabel("pupil area\n$(pixels^2)$")
     return ax
-
 
 
 def plot_response_matrix(stimulus_presentations, ax=None, vmin=0, vmax=1, cmap='viridis', cbar_ax=None):
@@ -208,7 +207,6 @@ def plot_response_matrix(stimulus_presentations, ax=None, vmin=0, vmax=1, cmap='
         return fig, ax
 
 
-
 def plot_dprime_matrix(stimulus_presentations, ax=None, vmin=0, vmax=1.5, cmap='magma', cbar_ax=None):
     '''
     makes a plot of the response matrix given a table of stimuli
@@ -262,6 +260,7 @@ def plot_dprime_matrix(stimulus_presentations, ax=None, vmin=0, vmax=1.5, cmap='
 
     if return_fig_ax:
         return fig, ax
+
 
 if __name__ == "__main__":
     # make_plots(experiment_dataset) - test
