@@ -666,3 +666,34 @@ def annotate_stimuli(dataset, inplace=False):
         response_matrix.index.name = 'previous_image_name'
 
         return response_matrix
+
+
+
+def get_licks_df(ophys_experiment):
+    '''
+    Creates a dataframe containing columns for 'timestamps', 'licks', where values are from
+    a binary array of the length of stimulus timestamps where frames with no lick are 0 and frames with a lick are 1,
+    and a column called 'lick_rate' with values of 'licks' averaged over a 6 frame window to get licks per 100ms,
+    Can be used to plot stim triggered average lick rate
+    Parameters:
+    -----------
+    ophys_experiment: obj
+        AllenSDK BehaviorOphysExperiment object
+        A BehaviorOphysExperiment instance
+        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
+
+    Returns:
+    --------
+    Pandas.DataFrame with columns 'timestamps', 'licks', and 'lick_rate' in units of licks / 100ms
+
+    '''
+    timestamps = ophys_experiment.stimulus_timestamps.copy()
+    licks = ophys_experiment.licks.copy()
+    lick_array = np.zeros(timestamps.shape)
+    lick_array[licks.frame.values] = 1
+    licks_df = pd.DataFrame(data=timestamps, columns=['timestamps'])
+    licks_df['licks'] = lick_array
+    licks_df['lick_rate'] = licks_df['licks'].rolling(
+        window=6, min_periods=1, win_type='triang').mean()
+
+    return licks_df
