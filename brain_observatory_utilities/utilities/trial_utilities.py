@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
+
 
 def dprime(hit_rate=None, fa_rate=None, go_trials=None, catch_trials=None, limits=False):
     '''

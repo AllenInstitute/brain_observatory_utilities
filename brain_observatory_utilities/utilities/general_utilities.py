@@ -232,7 +232,8 @@ def eventlocked_traces(traces_array, event_indices, start_ind_offset, end_ind_of
     Returns:
         sliced_dataout (np.ndarray): shape (nSamples, nEvents, nCells)
     '''
-    all_inds = event_indices + np.arange(start_ind_offset, end_ind_offset)[:, None] # takes a slice around all event_indices
+    all_inds = event_indices + np.arange(start_ind_offset, end_ind_offset)[
+        :, None]  # takes a slice around all event_indices
     sliced_dataout = traces_array.T[all_inds]
     return sliced_dataout
 
@@ -499,7 +500,8 @@ def time_from_last(timestamps, event_times, side='right'):
         time_from_last_event (np.array): the time from the last event for each timestamp
 
     '''
-    last_event_index = np.searchsorted(a=event_times, v=timestamps, side=side) - 1
+    last_event_index = np.searchsorted(
+        a=event_times, v=timestamps, side=side) - 1
     time_from_last_event = timestamps - event_times[last_event_index]
     # flashes that happened before the other thing happened should return nan
     time_from_last_event[last_event_index == -1] = np.nan
