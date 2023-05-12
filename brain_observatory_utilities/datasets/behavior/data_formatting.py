@@ -711,6 +711,7 @@ def get_licks_df(ophys_experiment):
 
     return licks_df
 
+
 def calculate_dprime_matrix(stimuli, sort_by_column=True, engaged_only=True):
     '''
     calculates the d' matrix for each individual image pair in the `stimulus` dataframe
