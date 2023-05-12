@@ -710,3 +710,49 @@ def get_licks_df(ophys_experiment):
         window=6, min_periods=1, win_type='triang').mean()
 
     return licks_df
+
+def calculate_dprime_matrix(stimuli, sort_by_column=True, engaged_only=True):
+    '''
+    calculates the d' matrix for each individual image pair in the `stimulus` dataframe
+
+    Parameters:
+    -----------
+    stimuli: Pandas.DataFrame
+        From experiment.stimulus_presentations, after annotating as follows:
+            annotate_stimuli(experiment, inplace = True)
+    sort_by_column: Boolean
+        if True (default), sorts outputs by column means
+    engaged_only: Boolean
+        If True (default), calculates only on engaged trials
+        Will throw an assertion error if True and 'engagement_state' column does not exist
+
+    Returns:
+    --------
+    Pandas.DataFrame
+        matrix of d' for each image combination
+        index = previous image
+        column = current image
+        catch trials are on diagonal
+
+    '''
+    if engaged_only:
+        assert 'engagement_state' in stimuli.columns, 'stimuli must have column called "engagement_state" if passing engaged_only = True'
+
+    response_matrix = calculate_response_matrix(
+        stimuli,
+        aggfunc=np.mean,
+        sort_by_column=sort_by_column,
+        engaged_only=engaged_only)
+
+    d_prime_matrix = response_matrix.copy()
+    for row in response_matrix.columns:
+        for col in response_matrix.columns:
+            d_prime_matrix.loc[row][col] = mindscope_utilities.dprime(
+                hit_rate=response_matrix.loc[row][col],
+                fa_rate=response_matrix[col][col],
+                limits=False
+            )
+            if row == col:
+                d_prime_matrix.loc[row][col] = np.nan
+
+    return d_prime_matrix
