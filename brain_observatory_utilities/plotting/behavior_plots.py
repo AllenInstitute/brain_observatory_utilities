@@ -1,4 +1,6 @@
 
+from brain_observastory_utilities.datasets.behavior.data_formatting import calculate_response_matrix,\
+    calculate_dprime_matrix
 import os
 import path
 import sys
