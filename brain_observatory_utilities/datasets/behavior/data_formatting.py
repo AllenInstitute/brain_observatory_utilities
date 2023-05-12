@@ -416,3 +416,72 @@ def add_n_to_stimulus_presentations(stimulus_presentations):
     stimulus_presentations['n_after_omission'] = n_after_omission
 
     return stimulus_presentations
+
+
+def get_annotated_stimulus_presentations(
+        ophys_experiment, epoch_duration_mins=10):
+    """
+    Takes in an ophys_experiment dataset object and returns the stimulus_presentations table with additional columns.
+    Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
+    the times of licks for each stimulus, the rolling reward rate, an identifier for 10 minute epochs within a session,
+    whether or not a stimulus was a pre-change or pre or post omission, and whether change stimuli were hits or misses
+    :param ophys_experiment: obj
+        AllenSDK BehaviorOphysExperiment object
+        A BehaviorOphysExperiment instance
+        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
+    :return: stimulus_presentations attribute of BehaviorOphysExperiment, with additional columns added
+    """
+    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
+    stimulus_presentations = add_licks_to_stimulus_presentations(
+        stimulus_presentations, ophys_experiment.licks, time_window=[0, 0.75])
+    stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
+        stimulus_presentations, ophys_experiment.running_speed, time_window=[0, 0.75])
+
+    if hasattr('ophys_experiment', 'eye_tracking'):
+        try:
+            stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
+                stimulus_presentations,
+                ophys_experiment.eye_tracking,
+                column_to_use='pupil_width',
+                time_window=[
+                    0,
+                    0.75])
+        except Exception as e:
+            print(
+                'could not add mean pupil to stimulus presentations, length of eye_tracking attribute is', len(
+                    ophys_experiment.eye_tracking))
+            print(e)
+    stimulus_presentations = add_reward_rate_to_stimulus_presentations(
+        stimulus_presentations, ophys_experiment.trials)
+    stimulus_presentations = add_epochs_to_stimulus_presentations(
+        stimulus_presentations,
+        time_column='start_time',
+        epoch_duration_mins=epoch_duration_mins)
+    stimulus_presentations = add_n_to_stimulus_presentations(stimulus_presentations)
+    try:  # not all session types have catch trials or omissions
+        stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+            stimulus_presentations, ophys_experiment.trials)
+        # add time from last change
+        stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(
+            stimulus_presentations)
+        # add pre-change
+        stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(
+            -1)
+        # add licked Boolean
+        stimulus_presentations['licked'] = [True if len(
+            licks) > 0 else False for licks in stimulus_presentations.licks.values]
+        stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(
+            -1)
+        # add engagement state based on reward rate - note this reward rate is
+        # calculated differently than the SDK version
+        stimulus_presentations = add_engagement_state_to_stimulus_presentations(
+            stimulus_presentations, ophys_experiment.trials)
+        # add omission annotation
+        stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(
+            -1)
+        stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(
+            1)
+    except Exception as e:
+        print(e)
+
+    return stimulus_presentations
