@@ -506,19 +506,3 @@ def time_from_last(timestamps, event_times, side='right'):
     time_from_last_event[last_event_index == -1] = np.nan
 
     return time_from_last_event
-
-
-def stimlocked_traces(traces_array, stim_indices, start_ind_offset, end_ind_offset):
-    '''
-    Extract trace for each cell, for each stim-relative window.
-    Args:
-        traces_array (np.ndarray): shape (nSamples, nCells) with timeseries for each cell
-        stim_indices (np.ndarray): 1-d array of shape (nStims) with closest sample ind for each stim
-        start_ind_offset (int): Where to start the window relative to each stim ind
-        end_ind_offset (int): Where to end the window relative to each stim ind
-    Returns:
-        sliced_dataout (np.ndarray): shape (nSamples, nStims, nCells)
-    '''
-    all_inds = stim_indices + np.arange(start_ind_offset, end_ind_offset)[:, None]  # takes a slice around all stim_indices
-    sliced_dataout = traces_array.T[all_inds]
-    return sliced_dataout
