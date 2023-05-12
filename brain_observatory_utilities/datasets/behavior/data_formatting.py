@@ -322,3 +322,36 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
 
     return stimulus_presentations
 
+
+def add_engagement_state_to_stimulus_presentations(
+        stimulus_presentations, trials):
+    """
+    Add 'engaged' Boolean column and 'engagement_state' string ('engaged' or 'disengaged'
+    using threshold of  1/90 rewards per second (~2/3 rewards per minute).
+    Will merge trials data in to stimulus presentations if it has not been done already.
+
+    :param stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment
+    :param trials: trials attribute of BehaviorOphysExperiment object
+    :return: stimulus_presentations with columns added: 'rewarded', 'reward_rate', 'reward_rate_per_second', 'engaged', 'engagement_state'
+    """
+    if 'reward_time' not in stimulus_presentations.keys():
+        stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+            stimulus_presentations, trials)
+
+    # create Boolean column indicating whether the trial was rewarded or not
+    stimulus_presentations['rewarded'] = [False if np.isnan(
+        reward_time) else True for reward_time in stimulus_presentations.reward_time.values]
+    # (rewards/stimulus)*(1 stimulus/.750s) = rewards/second
+    stimulus_presentations['reward_rate_per_second'] = stimulus_presentations['rewarded'].rolling(
+        window=320, min_periods=1, win_type='triang').mean() / .75  # units of rewards per second
+    # (rewards/stimulus)*(1 stimulus/.750s)*(60s/min) = rewards/min
+    stimulus_presentations['reward_rate'] = stimulus_presentations['rewarded'].rolling(
+        window=320, min_periods=1, win_type='triang').mean() * (60 / .75)  # units of rewards/min
+
+    reward_threshold = 2 / 3  # 2/3 rewards per minute = 1/90 rewards/second
+    stimulus_presentations['engaged'] = [
+        x > reward_threshold for x in stimulus_presentations['reward_rate'].values]
+    stimulus_presentations['engagement_state'] = [
+        'engaged' if engaged else 'disengaged' for engaged in stimulus_presentations['engaged'].values]
+
+    return stimulus_presentations
