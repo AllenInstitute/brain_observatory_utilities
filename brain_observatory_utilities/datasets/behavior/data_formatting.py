@@ -3,7 +3,7 @@ import numpy as np
 from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
 from brain_observatory_utilities.utilities.general_utilities import get_trace_average
 import brain_observatory_utilities.datasets.behavior.data_access as data_access
-
+from brain_observatory_utilities.utilities import general_utilities
 
 
 def add_mean_running_speed_to_stimulus_presentations(stimulus_presentations,
@@ -95,7 +95,7 @@ def add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_trackin
     '''
 
     eye_tracking = data_access.get_pupil_data(eye_tracking, interpolate_likely_blinks=True, normalize_to_gray_screen=True, zscore=False,
-                   interpolate_to_ophys=False, ophys_timestamps=None, stimulus_presentations=stimulus_presentations)
+                                              interpolate_to_ophys=False, ophys_timestamps=None, stimulus_presentations=stimulus_presentations)
 
     eye_tracking_timeseries = eye_tracking[column_to_use].values
     mean_pupil_around_stimulus = stimulus_presentations.apply(
@@ -111,7 +111,7 @@ def add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_trackin
 
 def add_rewards_to_stimulus_presentations(stimulus_presentations,
                                           rewards,
-                                          time_window=[0,3]):
+                                          time_window=[0, 3]):
     '''
     Append a column to stimulus_presentations which contains
     the timestamps of rewards that occur
@@ -263,7 +263,8 @@ def add_epochs_to_stimulus_presentations(stimulus_presentations, time_column='st
             indices = stimulus_presentations[(stimulus_presentations[time_column] >= epoch_times[i]) &
                                              (stimulus_presentations[time_column] < epoch_times[i + 1])].index.values
         else:
-            indices = stimulus_presentations[(stimulus_presentations[time_column] >= epoch_times[i])].index.values
+            indices = stimulus_presentations[(
+                stimulus_presentations[time_column] >= epoch_times[i])].index.values
         stimulus_presentations.at[indices, 'epoch'] = i
     return stimulus_presentations
 
@@ -280,7 +281,8 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     for idx, stimulus_presentation in stimulus_presentations.iterrows():
         start_time = stimulus_presentation['start_time']
         query_string = 'change_time > @start_time - 1 and change_time < @start_time + 1'
-        trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
+        trials_id = (
+            np.abs(start_time - trials.query(query_string)['change_time']))
         if len(trials_id) == 1:
             trials_id = trials_id.idxmin()
         else:
@@ -296,14 +298,17 @@ def add_trials_data_to_stimulus_presentations_table(stimulus_presentations, tria
     :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
     """
     # add trials_id and merge to get trial type information
-    stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    stimulus_presentations = add_trials_id_to_stimulus_presentations(
+        stimulus_presentations, trials)
     # only keep certain columns
     trials = trials[['change_time', 'go', 'catch', 'aborted', 'auto_rewarded',
-                    'hit', 'miss', 'false_alarm', 'correct_reject',
-                    'response_time', 'response_latency', 'reward_time', 'reward_volume', ]]
+                     'hit', 'miss', 'false_alarm', 'correct_reject',
+                     'response_time', 'response_latency', 'reward_time', 'reward_volume', ]]
     # merge trials columns into stimulus_presentations
-    stimulus_presentations = stimulus_presentations.reset_index().merge(trials, on='trials_id', how='left')
-    stimulus_presentations = stimulus_presentations.set_index('stimulus_presentations_id')
+    stimulus_presentations = stimulus_presentations.reset_index().merge(
+        trials, on='trials_id', how='left')
+    stimulus_presentations = stimulus_presentations.set_index(
+        'stimulus_presentations_id')
     return stimulus_presentations
 
 
@@ -316,8 +321,10 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
     RETURNS: stimulus_presentations
     '''
     stimulus_times = stimulus_presentations["start_time"].values
-    change_times = stimulus_presentations.query('is_change')['start_time'].values
-    time_from_last_change = general_utilities.time_from_last(stimulus_times, change_times)
+    change_times = stimulus_presentations.query(
+        'is_change')['start_time'].values
+    time_from_last_change = general_utilities.time_from_last(
+        stimulus_times, change_times)
     stimulus_presentations["time_from_last_change"] = time_from_last_change
 
     return stimulus_presentations
@@ -387,21 +394,27 @@ def add_n_to_stimulus_presentations(stimulus_presentations):
     change_ind = stimulus_presentations[stimulus_presentations['is_change']].index.values
 
     # Adding n_after_change
-    n_after_change = np.zeros(len(stimulus_presentations)) - 1  # -1 indicates before the first change
+    # -1 indicates before the first change
+    n_after_change = np.zeros(len(stimulus_presentations)) - 1
     for i in range(1, len(change_ind)):
-        n_after_change[change_ind[i - 1]: change_ind[i]] = np.arange(0, change_ind[i] - change_ind[i - 1]).astype(int)
-    n_after_change[change_ind[i]:] = np.arange(0, len(stimulus_presentations) - change_ind[i]).astype(int)
+        n_after_change[change_ind[i - 1]: change_ind[i]
+                       ] = np.arange(0, change_ind[i] - change_ind[i - 1]).astype(int)
+    n_after_change[change_ind[i]:] = np.arange(
+        0, len(stimulus_presentations) - change_ind[i]).astype(int)
     stimulus_presentations['n_after_change'] = n_after_change
 
     # Adding n_before_change
-    n_before_change = np.zeros(len(stimulus_presentations)) - 1  # -1 indicates after the last and before the first change
+    # -1 indicates after the last and before the first change
+    n_before_change = np.zeros(len(stimulus_presentations)) - 1
     for i in range(len(change_ind) - 1):
-        n_before_change[change_ind[i] + 1: change_ind[i + 1] + 1] = np.arange(change_ind[i + 1] - change_ind[i] - 1, -1, -1).astype(int)
+        n_before_change[change_ind[i] + 1: change_ind[i + 1] + 1] = np.arange(
+            change_ind[i + 1] - change_ind[i] - 1, -1, -1).astype(int)
     stimulus_presentations['n_before_change'] = n_before_change
 
     # Adding n_after_omission
-    n_after_omission = np.zeros(len(stimulus_presentations)) - 1  # -1 indicates before the first omission or
-                                                                  # from the next change till the next omission # noqa E114,E116
+    # -1 indicates before the first omission or
+    n_after_omission = np.zeros(len(stimulus_presentations)) - 1
+    # from the next change till the next omission # noqa E114,E116
     # if there are no omissions, n_after_omission will be all -1
     # and 'omitted' will be added and assigned to False
     if 'omitted' in stimulus_presentations.columns:
@@ -409,9 +422,11 @@ def add_n_to_stimulus_presentations(stimulus_presentations):
         for i in range(len(omission_ind)):
             if change_ind[-1] > omission_ind[i]:  # if there is a change after the omission
                 next_change_ind = change_ind[change_ind > omission_ind[i]][0]
-                n_after_omission[omission_ind[i]: next_change_ind] = np.arange(0, next_change_ind - omission_ind[i]).astype(int)
+                n_after_omission[omission_ind[i]: next_change_ind] = np.arange(
+                    0, next_change_ind - omission_ind[i]).astype(int)
             else:
-                n_after_omission[omission_ind[i]:] = np.arange(0, len(stimulus_presentations) - omission_ind[i]).astype(int)
+                n_after_omission[omission_ind[i]:] = np.arange(
+                    0, len(stimulus_presentations) - omission_ind[i]).astype(int)
     else:
         stimulus_presentations['omitted'] = False
     stimulus_presentations['n_after_omission'] = n_after_omission
@@ -458,7 +473,8 @@ def get_annotated_stimulus_presentations(
         stimulus_presentations,
         time_column='start_time',
         epoch_duration_mins=epoch_duration_mins)
-    stimulus_presentations = add_n_to_stimulus_presentations(stimulus_presentations)
+    stimulus_presentations = add_n_to_stimulus_presentations(
+        stimulus_presentations)
     try:  # not all session types have catch trials or omissions
         stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
             stimulus_presentations, ophys_experiment.trials)
