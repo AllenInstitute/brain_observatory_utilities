@@ -1,7 +1,7 @@
 import numpy as np
-import scipy
-
+import pandas as pd
 import brain_observatory_utilities.datasets.optical_physiology.data_formatting as ophys
+
 
 def get_stimulus_name(dataObject):
     """gets the stimulus name for a dataset object
@@ -210,6 +210,7 @@ def get_trials_data(dataObject,
                                     include_aborted=include_aborted_trials)
     return filtered_df
 
+
 def get_pupil_data(eye_tracking, interpolate_likely_blinks=False, normalize_to_gray_screen=False, zscore=False,
                    interpolate_to_ophys=False, ophys_timestamps=None, stimulus_presentations=None):
     """
@@ -229,11 +230,13 @@ def get_pupil_data(eye_tracking, interpolate_likely_blinks=False, normalize_to_g
     eye_tracking = eye_tracking.set_index('timestamps')
 
     # compute pupil_diameter and pupil_radius from pupil_area
-    eye_tracking['pupil_diameter'] = np.sqrt(eye_tracking.pupil_area) / np.pi  # convert pupil area to pupil diameter
-    eye_tracking['pupil_radius'] = np.sqrt(eye_tracking['pupil_area'] * (1 / np.pi))  # convert pupil area to pupil radius
+    # convert pupil area to pupil diameter
+    eye_tracking['pupil_diameter'] = np.sqrt(eye_tracking.pupil_area) / np.pi
+    eye_tracking['pupil_radius'] = np.sqrt(
+        eye_tracking['pupil_area'] * (1 / np.pi))  # convert pupil area to pupil radius
 
     # set all timepoints that are likely blinks to NaN for all eye_tracking columns
-    if True in eye_tracking.likely_blink.unique(): # only can do this if there are likely blinks to filter out
+    if True in eye_tracking.likely_blink.unique():  # only can do this if there are likely blinks to filter out
         eye_tracking.loc[eye_tracking['likely_blink'], :] = np.nan
 
     # add timestamps column back in
@@ -247,28 +250,34 @@ def get_pupil_data(eye_tracking, interpolate_likely_blinks=False, normalize_to_g
     if normalize_to_gray_screen:
         assert stimulus_presentations is not None, 'must provide stimulus_presentations if normalize_to_gray_screen is True'
         spontaneous_frames = ophys.get_spontaneous_frames(stimulus_presentations,
-                                                             eye_tracking.timestamps.values,
-                                                             gray_screen_period_to_use='before')
+                                                          eye_tracking.timestamps.values,
+                                                          gray_screen_period_to_use='before')
         for column in eye_tracking.keys():
-            if (column != 'timestamps') and (column!='likely_blink'):
-                gray_screen_mean_value = np.nanmean(eye_tracking[column].values[spontaneous_frames])
-                eye_tracking[column] = eye_tracking[column] / gray_screen_mean_value
+            if (column != 'timestamps') and (column != 'likely_blink'):
+                gray_screen_mean_value = np.nanmean(
+                    eye_tracking[column].values[spontaneous_frames])
+                eye_tracking[column] = eye_tracking[column] / \
+                    gray_screen_mean_value
     # z-score pupil data
     if zscore:
         for column in eye_tracking.keys():
             if (column != 'timestamps') and (column != 'likely_blink'):
-                eye_tracking[column] = scipy.stats.zscore(eye_tracking[column], nan_policy='omit')
+                eye_tracking[column] = scipy.stats.zscore(
+                    eye_tracking[column], nan_policy='omit')
 
     # interpolate to ophys timestamps
     if interpolate_to_ophys:
         assert ophys_timestamps is not None, 'must provide ophys_timestamps if interpolate_to_ophys is True'
-        eye_tracking_ophys_time = pd.DataFrame({'timestamps': ophys_timestamps})
+        eye_tracking_ophys_time = pd.DataFrame(
+            {'timestamps': ophys_timestamps})
         for column in eye_tracking.keys():
             if (column != 'timestamps') and (column != 'likely_blink'):
-                f = scipy.interpolate.interp1d(eye_tracking['timestamps'], eye_tracking[column], bounds_error=False)
-                eye_tracking_ophys_time[column] = f(eye_tracking_ophys_time['timestamps'])
-                eye_tracking_ophys_time[column].fillna(method='ffill', inplace=True)
+                f = scipy.interpolate.interp1d(
+                    eye_tracking['timestamps'], eye_tracking[column], bounds_error=False)
+                eye_tracking_ophys_time[column] = f(
+                    eye_tracking_ophys_time['timestamps'])
+                eye_tracking_ophys_time[column].fillna(
+                    method='ffill', inplace=True)
         eye_tracking = eye_tracking_ophys_time
 
     return eye_tracking
-
