@@ -506,3 +506,159 @@ def time_from_last(timestamps, event_times, side='right'):
     time_from_last_event[last_event_index == -1] = np.nan
 
     return time_from_last_event
+
+def dprime(hit_rate=None, fa_rate=None, go_trials=None, catch_trials=None, limits=False):
+    '''
+    calculates the d-prime for a given hit rate and false alarm rate
+
+    https://en.wikipedia.org/wiki/Sensitivity_index
+
+    Parameters
+    ----------
+    hit_rate : float or vector of floats
+        rate of hits in the True class
+    fa_rate : float or vector of floats
+        rate of false alarms in the False class
+    go_trials: vector of booleans
+        responses on all go trials (hit = True, miss = False)
+    catch_trials: vector of booleans
+        responses on all catch trials (false alarm = True, correct reject = False)
+    limits : boolean or tuple, optional
+        limits on extreme values, which can cause d' to overestimate on low trial counts.
+        False (default) results in limits of (0.01,0.99) to avoid infinite calculations
+        True results in limits being calculated based on trial count (only applicable if go_trials and catch_trials are passed)
+        (limits[0], limits[1]) results in specified limits being applied
+
+    Note: user must pass EITHER hit_rate and fa_rate OR go_trials and catch trials
+
+    Returns
+    -------
+    d_prime
+
+    Examples
+    --------
+    With hit and false alarm rates of 0 and 1, if we pass in limits of (0, 1) we are
+    allowing the raw probabilities to be used in the dprime calculation.
+    This will result in an infinite dprime:
+
+    >> dprime(hit_rate = 1.0, fa_rate = 0.0, limits = (0, 1))
+    np.inf
+
+    If we do not pass limits, the default limits of 0.01 and 0.99 will be used
+    which will convert the hit rate of 1 to 0.99 and the false alarm rate of 0 to 0.01.
+    This will prevent the d' calcluation from being infinite:
+
+    >>> dprime(hit_rate = 1.0, fa_rate = 0.0)
+    4.6526957480816815
+
+    If the hit and false alarm rates are already within the limits, the limits don't apply
+    >>> dprime(hit_rate = 0.6, fa_rate = 0.4)
+    0.5066942062715994
+
+    Alternately, instead of passing in pre-computed hit and false alarm rates,
+    we can pass in a vector of results on go-trials and catch-trials.
+    Then, if we call `limits = True`, the limits will be calculated based
+    on the number of trials in both the go and catch trial vectors
+    using the `trial_number_limit` function.
+
+    For example, for low trial counts, even perfect performance (hit rate = 1, false alarm rate = 0)
+    leads to a lower estimate of d', given that we have low confidence in the hit and false alarm rates;
+
+    >>> dprime(
+            go_trials = [1, 1, 1],
+            catch_trials = [0, 0],
+            limits = True
+            )
+    1.6419113162977828
+
+    At the limit, if we have only one sample of both trial types, the `trial_number_limit`
+    pushes our estimated response probability to 0.5 for both the hit and false alarm rates,
+    giving us a d' value of 0:
+
+    >>> dprime(
+            go_trials = [1],
+            catch_trials = [0],
+            limits = True
+            )
+    0.0
+
+    And with higher trial counts, the `trial_number_limit` allows the hit and false alarm
+    rates to get asymptotically closer to 0 and 1, leading to higher values of d'.
+    For example, for 10 trials of each type:
+
+    >>> dprime(
+            go_trials = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            catch_trials = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            limits = True
+        )
+    3.289707253902945
+
+    Or, if we had 20 hit trials and 10 false alarm trials:
+
+    >>> dprime(
+            go_trials = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            catch_trials = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            limits = True
+        )
+    3.604817611491527
+
+    Note also that Boolean vectors can be passed:
+
+    >>> dprime(
+            go_trials = [True, False, True, True, False],
+            catch_trials = [False, True, False, False, False],
+            limits = True
+        )
+    1.094968336708714
+    '''
+
+    assert hit_rate is not None or go_trials is not None, 'must either a specify `hit_rate` or pass a boolean vector of `go_trials`'
+    assert fa_rate is not None or catch_trials is not None, 'must either a specify `fa_rate` or pass a boolean vector of `catch_trials`'
+
+    assert hit_rate is None or go_trials is None, 'do not pass both `hit_rate` and a boolean vector of `go_trials`'
+    assert fa_rate is None or catch_trials is None, 'do not pass both `fa_rate` and a boolean vector of `catch_trials`'
+
+    assert not (hit_rate is not None and limits is True), 'limits can only be calculated if a go_trials vector is passed, not a hit_rate'
+    assert not (fa_rate is not None and limits is True), 'limits can only be calculated if a catch_trials vector is passed, not a fa_rate'
+
+    # calculate hit and fa rates as mean of boolean vectors
+    if hit_rate is None:
+        hit_rate = np.mean(go_trials)
+    if fa_rate is None:
+        fa_rate = np.mean(catch_trials)
+
+    Z = norm.ppf
+
+    if limits is False:
+        # if limits are False, apply default
+        limits = (0.01, 0.99)
+    elif limits is True:
+        # clip the hit and fa rate based on trial count
+        hit_rate = response_probabilities_trial_number_limit(
+            hit_rate, len(go_trials))
+        fa_rate = response_probabilities_trial_number_limit(
+            fa_rate, len(catch_trials))
+
+    if limits is not True:
+        # Limit values in order to avoid d' infinity
+        hit_rate = np.clip(hit_rate, limits[0], limits[1])
+        fa_rate = np.clip(fa_rate, limits[0], limits[1])
+
+    # keep track of nan locations
+    hit_rate = pd.Series(hit_rate)
+    fa_rate = pd.Series(fa_rate)
+    hit_rate_nan_locs = list(hit_rate[pd.isnull(hit_rate)].index)
+    fa_rate_nan_locs = list(fa_rate[pd.isnull(fa_rate)].index)
+
+    # fill nans with 0.0 to avoid warning about nans
+    d_prime = Z(hit_rate.fillna(0)) - Z(fa_rate.fillna(0))
+
+    # for every location in hit_rate and fa_rate with a nan, fill d_prime with a nan
+    for nan_locs in [hit_rate_nan_locs, fa_rate_nan_locs]:
+        d_prime[nan_locs] = np.nan
+
+    if len(d_prime) == 1:
+        # if the result is a 1-length vector, return as a scalar
+        return d_prime[0]
+    else:
+        return d_prime
