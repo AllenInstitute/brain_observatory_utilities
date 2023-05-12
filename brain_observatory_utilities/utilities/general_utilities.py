@@ -14,7 +14,7 @@ def get_trace_average(trace, timestamps, start_time, stop_time):
 
 def average_df_timeseries_values(dataframe, values_column):
     """calculates the mean timeseries from a dataframe
-        column. 
+        column.
 
     Parameters
     ----------
@@ -27,7 +27,7 @@ def average_df_timeseries_values(dataframe, values_column):
     Returns
     -------
     array
-        the averaged (mean) timeseries 
+        the averaged (mean) timeseries
     """
     values_array = np.vstack(dataframe[values_column].values)
     mean_trace = np.mean(values_array, axis=0)

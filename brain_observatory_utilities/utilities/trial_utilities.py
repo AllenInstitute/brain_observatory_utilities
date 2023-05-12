@@ -157,8 +157,8 @@ def dprime(hit_rate=None, fa_rate=None, go_trials=None, catch_trials=None, limit
     else:
         return d_prime
 
-    ef
-    response_probabilities_trial_number_limit(P, N):
+
+def response_probabilities_trial_number_limit(P, N):
     '''
     Calculates limits on response probability estimate based on trial count.
     An important point to note about d' is that the metric will be infinite with
