@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
 from brain_observatory_utilities.utilities.general_utilities import get_trace_average
 import brain_observatory_utilities.datasets.behavior.data_access as data_access
 from brain_observatory_utilities.utilities import general_utilities
@@ -201,6 +200,48 @@ def add_licks_to_stimulus_presentations(stimulus_presentations,
     )
     stimulus_presentations["licks"] = licks_each_stim
     return stimulus_presentations
+
+
+def calculate_reward_rate(response_latency=None,
+                          starttime=None,
+                          window=0.75,
+                          trial_window=25,
+                          initial_trials=10):
+
+    assert len(response_latency) == len(starttime)
+
+    df = pd.DataFrame({'response_latency': response_latency,
+                       'starttime': starttime})
+
+    # adds a column called reward_rate to the input dataframe
+    # the reward_rate column contains a rolling average of rewards/min
+    # window sets the window in which a response is considered correct,
+    # so a window of 1.0 means licks before 1.0 second are considered correct
+    #
+    # Reorganized into this unit-testable form by Nick Cain April 25 2019
+
+    reward_rate = np.zeros(len(df))
+    # make the initial reward rate infinite,
+    # so that you include the first trials automatically.
+    reward_rate[:initial_trials] = np.inf
+
+    for trial_number in range(initial_trials, len(df)):
+
+        min_index = np.max((0, trial_number - trial_window))
+        max_index = np.min((trial_number + trial_window, len(df)))
+        df_roll = df.iloc[min_index:max_index]
+
+        # get a rolling number of correct trials
+        correct = len(df_roll[df_roll.response_latency < window])
+
+        # get the time elapsed over the trials
+        time_elapsed = df_roll.starttime.iloc[-1] - df_roll.starttime.iloc[0]
+
+        # calculate the reward rate, rewards/min
+        reward_rate_on_this_lap = correct / time_elapsed * 60
+
+        reward_rate[trial_number] = reward_rate_on_this_lap
+    return reward_rate
 
 
 def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
