@@ -265,16 +265,17 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
 
     last_time = 0
     reward_rate_by_frame = []
-    if 'reward_rate' not in trials:
-        trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values,
-                                                      trials['start_time'],
-                                                      window=.5)
+    # if 'reward_rate' not in trials:
+    # recalculate reward_rate for trials 
+    trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values,
+                                                      trials['start_time'])
 
     trials = trials[trials['aborted'] == False]  # NOQA
     for change_time in trials.change_time.values:
         reward_rate = trials[trials.change_time ==  # NOQA
                              change_time].reward_rate.values[0]
-        for start_time in stimulus_presentations.start_time:
+        # add reward rate value from trial to all stim presentations belonging to that trial
+        for start_time in stimulus_presentations.start_time: 
             if (start_time < change_time) and (start_time > last_time):
                 reward_rate_by_frame.append(reward_rate)
                 last_time = start_time
@@ -374,33 +375,43 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
 def add_engagement_state_to_stimulus_presentations(
         stimulus_presentations, trials):
     """
-    Add 'engaged' Boolean column and 'engagement_state' string ('engaged' or 'disengaged'
-    using threshold of  1/90 rewards per second (~2/3 rewards per minute).
-    Will merge trials data in to stimulus presentations if it has not been done already.
+    Add 'engaged' Boolean column and 'engagement_state' string ('engaged' or 'disengaged')
+    using threshold of  2 rewards per minute, with reward_rate calculated as in the SDK by the
+    function add_reward_rate_to_stimulus_presentations() in this repo, which is a copy of what is done in the SDK.
+    Previously this function pulled directly from the SDK, but the funciton was added to a class and is no longer directly accessible.
+
 
     :param stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment
     :param trials: trials attribute of BehaviorOphysExperiment object
-    :return: stimulus_presentations with columns added: 'rewarded', 'reward_rate', 'reward_rate_per_second', 'engaged', 'engagement_state'
+    :return: stimulus_presentations with columns added: 'reward_rate', 'engaged', 'engagement_state'
     """
-    if 'reward_time' not in stimulus_presentations.keys():
-        stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
-            stimulus_presentations, trials)
 
-    # create Boolean column indicating whether the trial was rewarded or not
-    stimulus_presentations['rewarded'] = [False if np.isnan(
-        reward_time) else True for reward_time in stimulus_presentations.reward_time.values]
-    # (rewards/stimulus)*(1 stimulus/.750s) = rewards/second
-    stimulus_presentations['reward_rate_per_second'] = stimulus_presentations['rewarded'].rolling(
-        window=320, min_periods=1, win_type='triang').mean() / .75  # units of rewards per second
-    # (rewards/stimulus)*(1 stimulus/.750s)*(60s/min) = rewards/min
-    stimulus_presentations['reward_rate'] = stimulus_presentations['rewarded'].rolling(
-        window=320, min_periods=1, win_type='triang').mean() * (60 / .75)  # units of rewards/min
 
-    reward_threshold = 2 / 3  # 2/3 rewards per minute = 1/90 rewards/second
-    stimulus_presentations['engaged'] = [
-        x > reward_threshold for x in stimulus_presentations['reward_rate'].values]
-    stimulus_presentations['engagement_state'] = [
-        'engaged' if engaged else 'disengaged' for engaged in stimulus_presentations['engaged'].values]
+    # if 'reward_time' not in stimulus_presentations.keys():
+    #     # this function adds the trial information to every stimulus presentation belonging to that trial
+    #     stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+    #         stimulus_presentations, trials)
+
+    # # calculating stimulus based reward rate using trial level reward information will massively underestimate reward rate
+    # # create Boolean column indicating whether the trial was rewarded or not
+    # stimulus_presentations['rewarded'] = [False if np.isnan(
+    #     reward_time) else True for reward_time in stimulus_presentations.reward_time.values]
+    # # (rewards/stimulus)*(1 stimulus/.750s) = rewards/second
+    # stimulus_presentations['reward_rate_per_second'] = stimulus_presentations['rewarded'].rolling(
+    #     window=320, min_periods=1, win_type='triang').mean() / .75  # units of rewards per second
+    # # (rewards/stimulus)*(1 stimulus/.750s)*(60s/min) = rewards/min
+    # stimulus_presentations['reward_rate'] = stimulus_presentations['rewarded'].rolling(
+    #     window=320, min_periods=1, win_type='triang').mean() * (60 / .75)  # units of rewards/min
+
+    # reward_threshold = 2 / 3  # 2/3 rewards per minute = 1/90 rewards/second
+
+    if 'reward_rate' not in stimulus_presentations.keys():
+        stimulus_presentations = add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials)
+    
+    reward_threshold = 2
+
+    stimulus_presentations['engaged'] = [x > reward_threshold for x in stimulus_presentations['reward_rate'].values]
+    stimulus_presentations['engagement_state'] = ['engaged' if engaged else 'disengaged' for engaged in stimulus_presentations['engaged'].values]
 
     return stimulus_presentations
 
@@ -494,6 +505,10 @@ def get_annotated_stimulus_presentations(
     stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.running_speed, time_window=[0, 0.75])
 
+    # add 'could_change' column
+    annotated_stimuli = annotate_stimuli(ophys_experiment, inplace=False)
+    stimulus_presentations = stimulus_presentations.merge(annotated_stimuli[['could_change', 'previous_image_name', 'response_lick']], on='stimulus_presentations_id')
+
     if hasattr('ophys_experiment', 'eye_tracking'):
         try:
             stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
@@ -510,6 +525,9 @@ def get_annotated_stimulus_presentations(
             print(e)
     stimulus_presentations = add_reward_rate_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.trials)
+    # add engagement state based on reward rate 
+    stimulus_presentations = add_engagement_state_to_stimulus_presentations(
+            stimulus_presentations, ophys_experiment.trials)
     stimulus_presentations = add_epochs_to_stimulus_presentations(
         stimulus_presentations,
         time_column='start_time',
@@ -530,10 +548,6 @@ def get_annotated_stimulus_presentations(
             licks) > 0 else False for licks in stimulus_presentations.licks.values]
         stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(
             -1)
-        # add engagement state based on reward rate - note this reward rate is
-        # calculated differently than the SDK version
-        stimulus_presentations = add_engagement_state_to_stimulus_presentations(
-            stimulus_presentations, ophys_experiment.trials)
         # add omission annotation
         stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(
             -1)
@@ -653,11 +667,9 @@ def annotate_stimuli(dataset, inplace=False):
         mask = (stimulus_presentations.index.get_level_values(0) < stim_id) & (
             stimulus_presentations.index.get_level_values(1) == trials_id)
         # check to see if any previous stimuli have a response lick
-        stimulus_presentations.at[idx,
-                                  'previous_response_on_trial'] = stimulus_presentations[mask]['response_lick'].any()
+        stimulus_presentations.at[idx, 'previous_response_on_trial'] = stimulus_presentations[mask]['response_lick'].any()
     # set the index back to being just 'stimulus_presentations_id'
-    stimulus_presentations = stimulus_presentations.reset_index(
-    ).set_index('stimulus_presentations_id')
+    stimulus_presentations = stimulus_presentations.reset_index().set_index('stimulus_presentations_id')
 
     # add could_change
     stimulus_presentations['could_change'] = False
