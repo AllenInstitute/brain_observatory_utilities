@@ -176,7 +176,10 @@ def get_stimulus_response_xr(ophys_experiment,
     import brain_observatory_utilities.datasets.behavior.data_access as behavior_data_access
 
     # load stimulus_presentations table
-    stimulus_presentations = ophys_experiment.stimulus_presentations
+    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
+
+    # limit to change detection block
+    stimulus_presentations = behavior.limit_stimulus_presentations_to_change_detection(stimulus_presentations)
 
     # get event times and event ids (original order in the stimulus flow)
     event_times, event_ids = get_event_timestamps(
@@ -197,11 +200,11 @@ def get_stimulus_response_xr(ophys_experiment,
     elif 'pupil' in data_type:
         data = ophys_experiment.eye_tracking.copy() # eye tracking attribute is in tidy format
         data = behavior_data_access.get_pupil_data(data, interpolate_likely_blinks=True, normalize_to_gray_screen=True, zscore=False,
-                                interpolate_to_ophys=False, stimulus_presentations=ophys_experiment.stimulus_presentations, ophys_timestamps=None)
+                                interpolate_to_ophys=False, stimulus_presentations=stimulus_presentations, ophys_timestamps=None)
         # normalize to gray screen baseline
         data[unique_id_string] = 0  # only one value because only one trace
     elif 'lick' in data_type:
-        data = get_licks_df(ophys_experiment) # create dataframe with info about licks for each stimulus timestamp
+        data = behavior.get_licks_df(ophys_experiment) # create dataframe with info about licks for each stimulus timestamp
         data[unique_id_string] = 0  # only one value because only one trace
     else:
         # load neural data
@@ -268,7 +271,7 @@ def get_stimulus_response_xr(ophys_experiment,
     try:
         # compute significance of each trial, returns array of nConditions, nCells
         p_value_gray_screen = get_p_value_from_shuffled_spontaneous(mean_responses,
-                                                                    ophys_experiment.stimulus_presentations,
+                                                                    stimulus_presentations,
                                                                     ophys_experiment.ophys_timestamps,
                                                                     traces_array,
                                                                     response_window_duration*output_sampling_rate,

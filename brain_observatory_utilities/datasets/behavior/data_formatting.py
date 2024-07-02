@@ -5,6 +5,45 @@ import brain_observatory_utilities.datasets.behavior.data_access as data_access
 from brain_observatory_utilities.utilities import general_utilities
 
 
+
+def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
+    '''
+    if column 'stimulus_block_name' is in stimulus_presentations table (as in SDK v2.16.2),
+    limit stimulus presentations table to the change detection block
+    '''
+    if 'stimulus_block_name' in stimulus_presentations:
+        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
+        # change a few columns from type Boolean to bool (they were previously Boolean so they could contain NaNs for non-change detection stim blocks)
+        # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
+    return stimulus_presentations
+
+
+def convert_boolean_cols_to_bool(stimulus_presentations):
+    '''
+    For any dataframe containing columns derived from the stimulus_presentations table,
+    go through all columns and identify those that are type boolean (which occurs when the column has NaNs and bools)
+    and convert NaNs to False then set dtype to bool.
+
+    This is needed because many operations fail on columns of type boolean.
+    Some columns in stimulus_presentations are boolean in new SDK outputs because of the new stimulus_blocks,
+    as many values specific to change_detection task are set to NaN in other stimulus blocks, which
+    means that the entire column gets the dtype boolean instead of bool.
+    '''
+    for column in stimulus_presentations.columns.values:
+        try:
+            if type(stimulus_presentations[column].dtype).__name__ == 'BooleanDtype':
+                row_ids = stimulus_presentations[stimulus_presentations[column].isnull()].index
+                stimulus_presentations.loc[row_ids, column] = False
+                stimulus_presentations[column] = stimulus_presentations[column].astype('bool')
+        except:
+            if stimulus_presentations[column].dtype == 'boolean':
+                # remove NaNs and make bool
+                row_ids = stimulus_presentations[stimulus_presentations[column].isnull()].index
+                stimulus_presentations.loc[row_ids, column] = False
+                stimulus_presentations[column] = stimulus_presentations[column].astype('bool')
+    return stimulus_presentations
+
+
 def add_mean_running_speed_to_stimulus_presentations(stimulus_presentations,
                                                      running_speed,
                                                      time_window=[0, 0.75]):
@@ -306,7 +345,7 @@ def add_epochs_to_stimulus_presentations(stimulus_presentations, time_column='st
         else:
             indices = stimulus_presentations[(
                 stimulus_presentations[time_column] >= epoch_times[i])].index.values
-        stimulus_presentations.at[indices, 'epoch'] = i
+        stimulus_presentations.loc[indices, 'epoch'] = i
     return stimulus_presentations
 
 
@@ -322,8 +361,7 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     for idx, stimulus_presentation in stimulus_presentations.iterrows():
         start_time = stimulus_presentation['start_time']
         query_string = 'change_time > @start_time - 1 and change_time < @start_time + 1'
-        trials_id = (
-            np.abs(start_time - trials.query(query_string)['change_time']))
+        trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
         if len(trials_id) == 1:
             trials_id = trials_id.idxmin()
         else:
@@ -488,34 +526,44 @@ def get_annotated_stimulus_presentations(
         See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
     :return: stimulus_presentations attribute of BehaviorOphysExperiment, with additional columns added
     """
-    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
+    stimulus_presentations = ophys_experiment.stimulus_presentations
+    # limit to change detection block
+    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
+    
+    # add licks
     stimulus_presentations = add_licks_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.licks, time_window=[0, 0.75])
+    # add running
     stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.running_speed, time_window=[0, 0.75])
-
     if hasattr('ophys_experiment', 'eye_tracking'):
         try:
             stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
                 stimulus_presentations,
                 ophys_experiment.eye_tracking,
                 column_to_use='pupil_width',
-                time_window=[
-                    0,
-                    0.75])
+                time_window=[0, 0.75])
+            print(stimulus_presentations.stimulus_block_name.unique())
         except Exception as e:
             print(
                 'could not add mean pupil to stimulus presentations, length of eye_tracking attribute is', len(
                     ophys_experiment.eye_tracking))
             print(e)
+
+    # add reward rate
     stimulus_presentations = add_reward_rate_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.trials)
+    # add epochs
     stimulus_presentations = add_epochs_to_stimulus_presentations(
         stimulus_presentations,
         time_column='start_time',
         epoch_duration_mins=epoch_duration_mins)
-    stimulus_presentations = add_n_to_stimulus_presentations(
-        stimulus_presentations)
+    # add omission annotation
+    stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(-1)
+    stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(1)
+    # add repeat number
+
+    # add trials info
     try:  # not all session types have catch trials or omissions
         stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
             stimulus_presentations, ophys_experiment.trials)
@@ -534,11 +582,7 @@ def get_annotated_stimulus_presentations(
         # calculated differently than the SDK version
         stimulus_presentations = add_engagement_state_to_stimulus_presentations(
             stimulus_presentations, ophys_experiment.trials)
-        # add omission annotation
-        stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(
-            -1)
-        stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(
-            1)
+        
     except Exception as e:
         print(e)
 
@@ -583,13 +627,14 @@ def annotate_stimuli(dataset, inplace=False):
     else:
         stimulus_presentations = dataset.stimulus_presentations.copy()
 
+    # limit to change detection block
+    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
+
     # add previous_image_name
-    stimulus_presentations['previous_image_name'] = stimulus_presentations['image_name'].shift(
-    )
+    stimulus_presentations['previous_image_name'] = stimulus_presentations['image_name'].shift()
 
     # add next_start_time
-    stimulus_presentations['next_start_time'] = stimulus_presentations['start_time'].shift(
-        -1)
+    stimulus_presentations['next_start_time'] = stimulus_presentations['start_time'].shift(-1)
 
     # add trials_id and trial_stimulus_index
     stimulus_presentations['trials_id'] = None
@@ -615,23 +660,23 @@ def annotate_stimuli(dataset, inplace=False):
             trials_id = trials.loc[:row['start_time']].iloc[-1]['trials_id']
         except IndexError:
             trials_id = -1
-        stimulus_presentations.at[idx, 'trials_id'] = trials_id
+        stimulus_presentations.loc[idx, 'trials_id'] = trials_id
 
         if trials_id == last_trial_id:
             trial_stimulus_index += 1
         else:
             trial_stimulus_index = 0
             last_trial_id = trials_id
-        stimulus_presentations.at[idx,
+        stimulus_presentations.loc[idx,
                                   'trial_stimulus_index'] = trial_stimulus_index
 
         # note the `- 1e-9` acts as a <, as opposed to a <=
         stim_licks = licks.loc[row['start_time']:row['next_start_time'] - 1e-9].index.to_list()
 
-        stimulus_presentations.at[idx, 'response_lick_times'] = stim_licks
+        stimulus_presentations.loc[idx, 'response_lick_times'] = stim_licks
         if len(stim_licks) > 0:
-            stimulus_presentations.at[idx, 'response_lick'] = True
-            stimulus_presentations.at[idx,
+            stimulus_presentations.loc[idx, 'response_lick'] = True
+            stimulus_presentations.loc[idx,
                                       'response_lick_latency'] = stim_licks[0] - row['start_time']
 
     # merge in auto_rewarded column from trials table
@@ -653,7 +698,7 @@ def annotate_stimuli(dataset, inplace=False):
         mask = (stimulus_presentations.index.get_level_values(0) < stim_id) & (
             stimulus_presentations.index.get_level_values(1) == trials_id)
         # check to see if any previous stimuli have a response lick
-        stimulus_presentations.at[idx,
+        stimulus_presentations.loc[idx,
                                   'previous_response_on_trial'] = stimulus_presentations[mask]['response_lick'].any()
     # set the index back to being just 'stimulus_presentations_id'
     stimulus_presentations = stimulus_presentations.reset_index(
@@ -666,7 +711,7 @@ def annotate_stimuli(dataset, inplace=False):
         # stimulus (at least 4th flash of trial, no previous change on trial)
         if row['trial_stimulus_index'] >= 4 and row['previous_response_on_trial'] is False and row[
                 'image_name'] != 'omitted' and row['previous_image_name'] != 'omitted':
-            stimulus_presentations.at[idx, 'could_change'] = True
+            stimulus_presentations.loc[idx, 'could_change'] = True
 
     if inplace is False:
         return stimulus_presentations
