@@ -360,7 +360,7 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     # add to a new column called 'trials_id'
     for idx, stimulus_presentation in stimulus_presentations.iterrows():
         start_time = stimulus_presentation['start_time']
-        query_string = 'change_time > @start_time - 1 and change_time < @start_time + 1'
+        query_string = 'change_time > @start_time - 0.5 and change_time < @start_time + 0.5'
         trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
         if len(trials_id) == 1:
             trials_id = trials_id.idxmin()
