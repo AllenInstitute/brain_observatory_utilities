@@ -283,8 +283,7 @@ def calculate_reward_rate(response_latency=None,
     return reward_rate
 
 
-def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
-                                              trials):
+def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials):
     '''
     Parameters:
     ____________
@@ -304,10 +303,8 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations,
 
     last_time = 0
     reward_rate_by_frame = []
-    # if 'reward_rate' not in trials:
     # recalculate reward_rate for trials 
-    trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values,
-                                                      trials['start_time'])
+    trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values, trials['start_time'])
 
     trials = trials[trials['aborted'] == False]  # NOQA
     for change_time in trials.change_time.values:
@@ -418,30 +415,10 @@ def add_engagement_state_to_stimulus_presentations(
     function add_reward_rate_to_stimulus_presentations() in this repo, which is a copy of what is done in the SDK.
     Previously this function pulled directly from the SDK, but the funciton was added to a class and is no longer directly accessible.
 
-
     :param stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment
     :param trials: trials attribute of BehaviorOphysExperiment object
     :return: stimulus_presentations with columns added: 'reward_rate', 'engaged', 'engagement_state'
     """
-
-
-    # if 'reward_time' not in stimulus_presentations.keys():
-    #     # this function adds the trial information to every stimulus presentation belonging to that trial
-    #     stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
-    #         stimulus_presentations, trials)
-
-    # # calculating stimulus based reward rate using trial level reward information will massively underestimate reward rate
-    # # create Boolean column indicating whether the trial was rewarded or not
-    # stimulus_presentations['rewarded'] = [False if np.isnan(
-    #     reward_time) else True for reward_time in stimulus_presentations.reward_time.values]
-    # # (rewards/stimulus)*(1 stimulus/.750s) = rewards/second
-    # stimulus_presentations['reward_rate_per_second'] = stimulus_presentations['rewarded'].rolling(
-    #     window=320, min_periods=1, win_type='triang').mean() / .75  # units of rewards per second
-    # # (rewards/stimulus)*(1 stimulus/.750s)*(60s/min) = rewards/min
-    # stimulus_presentations['reward_rate'] = stimulus_presentations['rewarded'].rolling(
-    #     window=320, min_periods=1, win_type='triang').mean() * (60 / .75)  # units of rewards/min
-
-    # reward_threshold = 2 / 3  # 2/3 rewards per minute = 1/90 rewards/second
 
     if 'reward_rate' not in stimulus_presentations.keys():
         stimulus_presentations = add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials)
@@ -567,6 +544,7 @@ def get_annotated_stimulus_presentations(
     # add engagement state based on reward rate 
     stimulus_presentations = add_engagement_state_to_stimulus_presentations(
             stimulus_presentations, ophys_experiment.trials)
+    # add epochs
     stimulus_presentations = add_epochs_to_stimulus_presentations(
         stimulus_presentations,
         time_column='start_time',
@@ -581,21 +559,13 @@ def get_annotated_stimulus_presentations(
         stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
             stimulus_presentations, ophys_experiment.trials)
         # add time from last change
-        stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(
-            stimulus_presentations)
+        stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
         # add pre-change
-        stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(
-            -1)
+        stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
         # add licked Boolean
         stimulus_presentations['licked'] = [True if len(
             licks) > 0 else False for licks in stimulus_presentations.licks.values]
-        stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(
-            -1)
-        # add omission annotation
-        stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(
-            -1)
-        stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(
-            1)
+        stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(-1)
     except Exception as e:
         print(e)
 
