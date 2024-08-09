@@ -8,3 +8,5 @@ brain_observatory_utilities/utilities/__pycache__/
 brain_observatory_utilities/__pycache__/
 
 *.pyc
+
+*.gz
