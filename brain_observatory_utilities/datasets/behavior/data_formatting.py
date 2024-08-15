@@ -384,6 +384,9 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
     :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
     """
+    # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
+    trials['change_time'] = trials['change_time_no_display_delay'] 
+
     # for each stimulus_presentation, find the trials_id that is closest to the start time
     # add to a new column called 'trials_id'
     for idx, stimulus_presentation in stimulus_presentations.iterrows():
@@ -841,6 +844,11 @@ def annotate_stimuli(dataset, inplace=False):
     else:
         stimulus_presentations = dataset.stimulus_presentations.copy()
 
+    trials = dataset.trials.copy()
+    if 'change_time' not in trials.keys():
+        trials['change_time'] = trials['change_time_no_display_delay']
+
+    
     # limit to change detection block
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
 
@@ -862,8 +870,8 @@ def annotate_stimuli(dataset, inplace=False):
     stimulus_presentations['response_lick_latency'] = None
 
     # make a copy of trials with 'start_time' as index to speed lookup
-    trials = dataset.trials.copy().reset_index().set_index('start_time')
-
+    trials = trials.copy().reset_index().set_index('start_time')
+    
     # make a copy of licks with 'timestamps' as index to speed lookup
     licks = dataset.licks.copy().reset_index().set_index('timestamps')
 
@@ -895,7 +903,7 @@ def annotate_stimuli(dataset, inplace=False):
 
     # merge in auto_rewarded column from trials table
     stimulus_presentations = stimulus_presentations.reset_index().merge(
-        dataset.trials[['auto_rewarded']],
+        trials[['auto_rewarded']],
         on='trials_id',
         how='left',
     ).set_index('stimulus_presentations_id')
@@ -1012,8 +1020,7 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     return stimulus_presentations
 
 
-def get_annotated_stimulus_presentations(
-        ophys_experiment, epoch_duration_mins=10):
+def get_annotated_stimulus_presentations(ophys_experiment, epoch_duration_mins=10):
     """
     Takes in an ophys_experiment dataset object and returns the stimulus_presentations table with additional columns.
     Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
@@ -1025,10 +1032,14 @@ def get_annotated_stimulus_presentations(
         See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
     :return: stimulus_presentations attribute of BehaviorOphysExperiment, with additional columns added
     """
-    stimulus_presentations = ophys_experiment.stimulus_presentations
+    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
     # limit to change detection block
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
     
+    trials = ophys_experiment.trials.copy()
+    if 'change_time' not in trials.keys():
+        trials['change_time'] = trials['change_time_no_display_delay']
+
     # add licks
     stimulus_presentations = add_licks_to_stimulus_presentations(
         stimulus_presentations, ophys_experiment.licks, time_window=[0, 0.75])
@@ -1050,7 +1061,7 @@ def get_annotated_stimulus_presentations(
     # add trials info
     try:  # not all session types have catch trials or omissions
         stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
-            stimulus_presentations, ophys_experiment.trials)
+            stimulus_presentations, trials)
         # add time from last change
         stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
         # add pre-change
@@ -1068,10 +1079,10 @@ def get_annotated_stimulus_presentations(
 
     # add reward rate
     stimulus_presentations = add_reward_rate_to_stimulus_presentations(
-        stimulus_presentations, ophys_experiment.trials)
+        stimulus_presentations, trials)
     # add engagement state based on reward rate 
     stimulus_presentations = add_engagement_state_to_stimulus_presentations(
-            stimulus_presentations, ophys_experiment.trials)
+            stimulus_presentations, trials)
     # add epochs
     stimulus_presentations = add_epochs_to_stimulus_presentations(
         stimulus_presentations,
