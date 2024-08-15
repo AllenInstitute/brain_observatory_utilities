@@ -10,3 +10,7 @@ brain_observatory_utilities/__pycache__/
 *.pyc
 
 *.gz
+
+brain_observatory_utilities/.DS_Store
+
+.DS_Store
