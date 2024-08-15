@@ -11,10 +11,13 @@ def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
     if column 'stimulus_block_name' is in stimulus_presentations table (as in SDK v2.16.2),
     limit stimulus presentations table to the change detection block
     '''
-    if 'stimulus_block_name' in stimulus_presentations:
+    if 'stimulus_block_name' in stimulus_presentations: # This is true for VBO
         stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
         # change a few columns from type Boolean to bool (they were previously Boolean so they could contain NaNs for non-change detection stim blocks)
         # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
+    elif 'stimulus_block' in stimulus_presentations: # This is true for VBN and VBO, but wont be true for VBO release prior to v1.1.0, so it should only apply to VBN
+        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_name.str.contains('Natural_Images')]
+
     return stimulus_presentations
 
 
@@ -75,11 +78,11 @@ def add_mean_running_speed_to_stimulus_presentations(stimulus_presentations,
         cache = bpc.from_s3_cache(cache_dir=cache_dir)
 
         # load data for one experiment
-        ophys_experiment = cache.get_behavior_ophys_experiment(experiment_id)
+        dataset = cache.get_behavior_ophys_experiment(experiment_id)
 
         # get necessary tables
-        stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
-        running_speed = ophys_experiment.running_speed.copy()
+        stimulus_presentations = dataset.stimulus_presentations.copy()
+        running_speed = dataset.running_speed.copy()
 
         # add running_speed to stim presentations
         stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(stimulus_presentations, running_speed)  # noqa E501
@@ -122,11 +125,11 @@ def add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_trackin
         cache = bpc.from_s3_cache(cache_dir=cache_dir)
 
         # load data for one experiment
-        ophys_experiment = cache.get_behavior_ophys_experiment(experiment_id)
+        dataset = cache.get_behavior_ophys_experiment(experiment_id)
 
         # get necessary tables
-        stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
-        eye_tracking = ophys_experiment.eye_tracking.copy()
+        stimulus_presentations = dataset.stimulus_presentations.copy()
+        eye_tracking = dataset.eye_tracking.copy()
 
         # add pupil area to stim presentations
         stimulus_presentations = add_mean_pupil_to_stimulus_presentations(stimulus_presentations, eye_tracking, column_to_use='pupil_area')  # noqa E501
@@ -174,11 +177,11 @@ def add_rewards_to_stimulus_presentations(stimulus_presentations,
         cache = bpc.from_s3_cache(cache_dir=cache_dir)
 
         # load data for one experiment
-        ophys_experiment = cache.get_behavior_ophys_experiment(experiment_id)
+        dataset = cache.get_behavior_ophys_experiment(experiment_id)
 
         # get necessary tables
-        stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
-        rewards = ophys_experiment.rewards.copy()
+        stimulus_presentations = dataset.stimulus_presentations.copy()
+        rewards = dataset.rewards.copy()
 
         # add rewards to stim presentations
         stimulus_presentations = add_rewards_to_stimulus_presentations(stimulus_presentations, rewards)  # noqa E501
@@ -221,11 +224,11 @@ def add_licks_to_stimulus_presentations(stimulus_presentations,
         cache = bpc.from_s3_cache(cache_dir=cache_dir)
 
         # load data for one experiment
-        ophys_experiment = cache.get_behavior_ophys_experiment(experiment_id)
+        dataset = cache.get_behavior_ophys_experiment(experiment_id)
 
         # get necessary tables
-        stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
-        licks = ophys_experiment.licks.copy()
+        stimulus_presentations = dataset.stimulus_presentations.copy()
+        licks = dataset.licks.copy()
 
         # add licks to stim presentations
         stimulus_presentations = add_licks_to_stimulus_presentations(stimulus_presentations, licks)
@@ -288,9 +291,9 @@ def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials):
     Parameters:
     ____________
     trials: Pandas.DataFrame
-        ophys_experiment.trials
+        dataset.trials
     stimulus_presentation: Pandas.DataFrame
-        ophys_experiment.stimulus_presentations
+        ophys_datasetexperiment.stimulus_presentations
 
     Returns:
     ___________
@@ -337,8 +340,8 @@ def add_engagement_state_to_stimulus_presentations(
     function add_reward_rate_to_stimulus_presentations() in this repo, which is a copy of what is done in the SDK.
     Previously this function pulled directly from the SDK, but the funciton was added to a class and is no longer directly accessible.
 
-    :param stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment
-    :param trials: trials attribute of BehaviorOphysExperiment object
+    :param stimulus_presentations: stimulus_presentations attribute of SDK dataset object
+    :param trials: trials attribute of SDK dataset object
     :return: stimulus_presentations with columns added: 'reward_rate', 'engaged', 'engagement_state'
     """
 
@@ -381,11 +384,12 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     """
     Add trials_id to stimulus presentations by finding the closest change time to each stimulus start time
     If there is no corresponding change time, the trials_id is NaN
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'change_time'
     """
     # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
-    trials['change_time'] = trials['change_time_no_display_delay'] 
+    if 'change_time' not in trials.columns: 
+        trials['change_time'] = trials['change_time_no_display_delay'] 
 
     # for each stimulus_presentation, find the trials_id that is closest to the start time
     # add to a new column called 'trials_id'
@@ -406,9 +410,13 @@ def add_trial_type_to_stimulus_presentations(stimulus_presentations, trials):
     Add trials_id to stimulus presentations table
     then join trial type columns of trials table with stimulus_presentations
     trial types = ['aborted', 'auto_rewarded', 'go', 'catch']
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'start_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'start_time'
     """
+    # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
+    if 'change_time' not in trials.columns: 
+        trials['change_time'] = trials['change_time_no_display_delay'] 
+
     # add trials_id for all stimulus presentations and merge to get trial type information
     stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
     # get trial type columns
@@ -422,15 +430,22 @@ def add_trial_type_to_stimulus_presentations(stimulus_presentations, trials):
 def add_trials_data_to_stimulus_presentations_table(stimulus_presentations, trials):
     """
     Add trials_id to stimulus presentations table then join relevant columns of trials with stimulus_presentations
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'change_time'
     """
+    # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
+    if 'change_time' not in trials.columns: 
+        trials['change_time'] = trials['change_time_no_display_delay'] 
+
     # add trials_id and merge to get trial type information
     stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
     # only keep certain columns
-    trials = trials[['change_time', 'go', 'catch', 'aborted', 'auto_rewarded',
+    columns_to_keep = ['change_time', 'go', 'catch', 'aborted', 'auto_rewarded',
                      'hit', 'miss', 'false_alarm', 'correct_reject',
-                     'response_time', 'response_latency', 'reward_time', 'reward_volume', ]]
+                     'response_time', 'reward_time', 'reward_volume', ]
+    if 'response_latency' in trials.columns: # VBN doesnt have response_latency
+        columns_to_keep = columns_to_keep + ['response_latency']
+    trials = trials[columns_to_keep]
     # merge trials columns into stimulus_presentations
     stimulus_presentations = stimulus_presentations.reset_index().merge(
         trials, on='trials_id', how='left')
@@ -448,14 +463,15 @@ def add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trial
     i.e. this function only assigns a trials_id to the stimulus presentations corresponding to go and catch trials as defined in the trials table.
     If you want to assign trials_id to every stimulus presentation that is part of a trial, use
         add_trials_id_to_stimulus_presentations
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'change_time'
     """
     # for each stimulus_presentation, find the change_time that is closest to the start time
     # then add the corresponding trials_id to stimulus_presentations
     trials = trials.copy()
     if 'change_time' not in trials.keys():
         trials['change_time'] = trials['change_time_no_display_delay']
+    
     stimulus_presentations = stimulus_presentations.copy()
     for row in range(len(stimulus_presentations)):
         this_start_time = stimulus_presentations.iloc[row].start_time
@@ -483,8 +499,8 @@ def add_change_trial_outcomes_to_stimulus_presentations(stimulus_presentations, 
     and whether a catch trial was a false alarm or correct reject
     with stimulus_presentations,
     relevant columns here are
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'change_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'change_time'
     """
     # add trials_id and merge to get trial type information
     stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
@@ -509,8 +525,7 @@ def add_time_from_last_change_to_stimulus_presentations(stimulus_presentations):
     RETURNS: stimulus_presentations
     '''
     stimulus_times = stimulus_presentations["start_time"].values
-    change_times = stimulus_presentations.query(
-        'is_change')['start_time'].values
+    change_times = stimulus_presentations[stimulus_presentations.is_change]['start_time'].values
     time_from_last_change = general_utilities.time_from_last(stimulus_times, change_times)
     stimulus_presentations["time_from_last_change"] = time_from_last_change
 
@@ -665,7 +680,7 @@ def add_n_to_stimulus_presentations(stimulus_presentations):
     Parameters
     ----------
     stimulus_presentations : pd.DataFrame
-        stimulus_presentations table from BehaviorOphysExperiment
+        stimulus_presentations table from SDK dataset object
 
     Returns
     -------
@@ -720,8 +735,8 @@ def add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentat
     """
     Add a column to stimulus_presentations that indicates how many stimuli have been shown since the trial start
 
-    :param: stimulus_presentations: stimulus_presentations attribute of BehaviorOphysExperiment object, must have 'start_time'
-    :param trials: trials attribute of BehaviorOphysExperiment object, must have 'start_time'
+    :param: stimulus_presentations: stimulus_presentations attribute of dataset object, must have 'start_time'
+    :param trials: trials attribute of dataset object, must have 'start_time'
     """
     stimulus_presentations = stimulus_presentations.copy()
     # if trials_id is not a column of stimulus_presentations, add it
@@ -827,8 +842,14 @@ def annotate_stimuli(dataset, inplace=False):
 
     Parameters:
     -----------
-    dataset : BehaviorSession or BehaviorOphysSession object
-        an SDK session object
+    dataset : an SDK session object
+        AllenSDK BehaviorOphysExperiment object
+        or AllenSDK BehaviorEcephysSession object
+        or AllenSDK BehaviorSession object
+        See:
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
+    
     inplace : Boolean
         If True, operates on the dataset.stimulus_presentations object directly and returns None
         If False (default), operates on a copy and returns the copy
@@ -882,28 +903,26 @@ def annotate_stimuli(dataset, inplace=False):
             trials_id = trials.loc[:row['start_time']].iloc[-1]['trials_id']
         except IndexError:
             trials_id = -1
-        stimulus_presentations.loc[idx, 'trials_id'] = trials_id
+        stimulus_presentations.at[idx, 'trials_id'] = trials_id
 
         if trials_id == last_trial_id:
             trial_stimulus_index += 1
         else:
             trial_stimulus_index = 0
             last_trial_id = trials_id
-        stimulus_presentations.loc[idx,
-                                  'trial_stimulus_index'] = trial_stimulus_index
+        stimulus_presentations.at[idx, 'trial_stimulus_index'] = trial_stimulus_index
 
         # note the `- 1e-9` acts as a <, as opposed to a <=
         stim_licks = licks.loc[row['start_time']:row['next_start_time'] - 1e-9].index.to_list()
 
-        stimulus_presentations.loc[idx, 'response_lick_times'] = stim_licks
+        stimulus_presentations.at[idx, 'response_lick_times'] = stim_licks
         if len(stim_licks) > 0:
-            stimulus_presentations.loc[idx, 'response_lick'] = True
-            stimulus_presentations.loc[idx,
-                                      'response_lick_latency'] = stim_licks[0] - row['start_time']
+            stimulus_presentations.at[idx, 'response_lick'] = True
+            stimulus_presentations.at[idx, 'response_lick_latency'] = stim_licks[0] - row['start_time']
 
     # merge in auto_rewarded column from trials table
     stimulus_presentations = stimulus_presentations.reset_index().merge(
-        trials[['auto_rewarded']],
+        trials[['auto_rewarded', 'trials_id']],
         on='trials_id',
         how='left',
     ).set_index('stimulus_presentations_id')
@@ -1020,42 +1039,48 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     return stimulus_presentations
 
 
-def get_annotated_stimulus_presentations(ophys_experiment, epoch_duration_mins=10):
+def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
     """
-    Takes in an ophys_experiment dataset object and returns the stimulus_presentations table with additional columns.
+    Takes in an SDK dataset object and returns the stimulus_presentations table with additional columns.
     Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
     the times of licks for each stimulus, the rolling reward rate, an identifier for 10 minute epochs within a session,
     whether or not a stimulus was a pre-change or pre or post omission, and whether change stimuli were hits or misses
-    :param ophys_experiment: obj
+    :param dataset: obj
         AllenSDK BehaviorOphysExperiment object
-        A BehaviorOphysExperiment instance
-        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
-    :return: stimulus_presentations attribute of BehaviorOphysExperiment, with additional columns added
+        or AllenSDK BehaviorEcephysSession object
+        or AllenSDK BehaviorSession object
+        See:
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
+    
+    :return: stimulus_presentations attribute of dataset object, with additional columns added
     """
-    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
+    stimulus_presentations = dataset.stimulus_presentations.copy()
     # limit to change detection block
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
     
-    trials = ophys_experiment.trials.copy()
+    trials = dataset.trials.copy()
     if 'change_time' not in trials.keys():
         trials['change_time'] = trials['change_time_no_display_delay']
 
     # add licks
     stimulus_presentations = add_licks_to_stimulus_presentations(
-        stimulus_presentations, ophys_experiment.licks, time_window=[0, 0.75])
+        stimulus_presentations, dataset.licks, time_window=[0, 0.75])
     # add running
     stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
-        stimulus_presentations, ophys_experiment.running_speed, time_window=[0, 0.75])
+        stimulus_presentations, dataset.running_speed, time_window=[0, 0.75])
     # if hasattr('ophys_experiment', 'eye_tracking'):
+
     try:
         stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
             stimulus_presentations,
-            ophys_experiment.eye_tracking,
+            dataset.eye_tracking,
             column_to_use='pupil_width',
             time_window=[0, 0.75])
+        
     except Exception as e:
         print('could not add mean pupil to stimulus presentations, length of eye_tracking attribute is', len(
-                ophys_experiment.eye_tracking))
+                dataset.eye_tracking))
         print(e)
 
     # add trials info
@@ -1144,7 +1169,7 @@ def calculate_response_matrix(stimuli, aggfunc=np.mean, sort_by_column=True, eng
     return response_matrix
 
 
-def get_licks_df(ophys_experiment):
+def get_licks_df(dataset):
     '''
     Creates a dataframe containing columns for 'timestamps', 'licks', where values are from
     a binary array of the length of stimulus timestamps where frames with no lick are 0 and frames with a lick are 1,
@@ -1152,18 +1177,21 @@ def get_licks_df(ophys_experiment):
     Can be used to plot stim triggered average lick rate
     Parameters:
     -----------
-    ophys_experiment: obj
+    dataset: obj
         AllenSDK BehaviorOphysExperiment object
-        A BehaviorOphysExperiment instance
-        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
-
+        or AllenSDK BehaviorEcephysSession object
+        or AllenSDK BehaviorSession object
+        See:
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
+        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
+    
     Returns:
     --------
     Pandas.DataFrame with columns 'timestamps', 'licks', and 'lick_rate' in units of licks / 100ms
 
     '''
-    timestamps = ophys_experiment.stimulus_timestamps.copy()
-    licks = ophys_experiment.licks.copy()
+    timestamps = dataset.stimulus_timestamps.copy()
+    licks = dataset.licks.copy()
     lick_array = np.zeros(timestamps.shape)
     lick_array[licks.frame.values] = 1
     licks_df = pd.DataFrame(data=timestamps, columns=['timestamps'])
