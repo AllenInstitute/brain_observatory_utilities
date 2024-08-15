@@ -61,7 +61,7 @@ def get_stimulus_response_xr(dataset,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
-                             stimulus_block=0,
+                             stimulus_block=1,
                              **kwargs):
     '''
     Parameters:
@@ -160,6 +160,7 @@ def get_stimulus_response_xr(dataset,
         # load neural data
         data = ophys.build_tidy_cell_df(dataset, exclude_invalid_rois=exclude_invalid_rois)
     elif ('spike_times' in data_type) or ('spike_rate' in data_type):
+        spike_rate_df, _ = ephys.get_continous_spike_rate_for_units(dataset, spike_rate_bin_size, stimulus_block)
         data = ephys.build_tidy_cell_df(dataset, spike_rate_bin_size, stimulus_block) # dataset must be BehaviorEcephysSession object
     unique_ids = np.unique(data[unique_id_string].values)
 
@@ -207,7 +208,7 @@ def get_stimulus_response_xr(dataset,
     elif data_type == 'dff':
         traces_array = np.vstack(dataset.dff_traces['dff'].values)
     elif data_type == 'spike_rate':
-        traces_array = np.vstack()
+        traces_array = np.vstack(spike_rate_df['spike_rate'].values)
     else:
         traces_array = data[data_type].values
 
@@ -398,7 +399,7 @@ def get_stimulus_response_df(dataset,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
-                             stimulus_block=0,
+                             stimulus_block=1,
                              **kwargs):
     '''
     Get stimulus aligned responses from one ophys_experiment.
@@ -515,7 +516,7 @@ def get_stimulus_response_df(dataset,
     stimulus_response_df['data_type'] = data_type
     stimulus_response_df['event_type'] = event_type
     stimulus_response_df['interpolate'] = interpolate
-    if output_sampling_rate is None:
+    if (output_sampling_rate is None) and (data_type != 'spike_rate'): # dont resample if its spikes
         output_sampling_rate = 1 / np.diff(trace_timestamps[0, :]).mean()
     else:
         output_sampling_rate = output_sampling_rate
