@@ -61,7 +61,7 @@ def get_stimulus_response_xr(dataset,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
-                             stimulus_block=1,
+                             stimulus_block=0,
                              **kwargs):
     '''
     Parameters:
@@ -399,7 +399,7 @@ def get_stimulus_response_df(dataset,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
-                             stimulus_block=1,
+                             stimulus_block=0,
                              **kwargs):
     '''
     Get stimulus aligned responses from one ophys_experiment.

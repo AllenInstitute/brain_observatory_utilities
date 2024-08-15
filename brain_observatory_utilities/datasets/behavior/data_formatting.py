@@ -15,8 +15,9 @@ def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
         stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
         # change a few columns from type Boolean to bool (they were previously Boolean so they could contain NaNs for non-change detection stim blocks)
         # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
-    elif 'stimulus_block' in stimulus_presentations: # This is true for VBN and VBO, but wont be true for VBO release prior to v1.1.0, so it should only apply to VBN
-        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_name.str.contains('Natural_Images')]
+    else: # For VBO, limit to active block with images (should be stimulus_block=0, but lets be explicit to be sure)
+        stimulus_presentations = stimulus_presentations[(stimulus_presentations.stimulus_name.str.contains('Natural_Images')) & 
+                                                        (stimulus_presentations.active==True)]
 
     return stimulus_presentations
 
