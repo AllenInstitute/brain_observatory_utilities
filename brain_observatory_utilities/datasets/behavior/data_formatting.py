@@ -396,7 +396,7 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     # add to a new column called 'trials_id'
     for idx, stimulus_presentation in stimulus_presentations.iterrows():
         start_time = stimulus_presentation['start_time']
-        query_string = 'change_time > @start_time - 0.5 and change_time < @start_time + 0.5'
+        query_string = 'start_time > @start_time - 0.5 and start_time < @start_time + 0.5'
         trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
         if len(trials_id) == 1:
             trials_id = trials_id.idxmin()
@@ -406,10 +406,73 @@ def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     return stimulus_presentations
 
 
+# def add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
+#     """
+#     Add trials_id for change and sham change times to stimulus presentations by
+#     finding the closest change (or sham change) time to each stimulus start time.
+#     Column is called 'change_trials_id' to distinguish from 'trials_id' which is applied to all flashes in a trial
+#     If there is no corresponding change (or sham change) time, the change_trials_id is NaN
+#     i.e. this function only assigns a change_trials_id to the stimulus presentations corresponding to go and catch trials as defined in the trials table.
+#     :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+#     :param trials: trials attribute of SDK dataset object, must have 'change_time'
+#     """
+#     # for each stimulus_presentation, find the change_time that is closest to the start time
+#     # then add the corresponding trials_id to stimulus_presentations
+#     trials = trials.copy()
+#     if 'change_time' not in trials.keys():
+#         trials['change_time'] = trials['change_time_no_display_delay']
+    
+#     stimulus_presentations = stimulus_presentations.copy()
+#     for row in range(len(stimulus_presentations)):
+#         this_start_time = stimulus_presentations.iloc[row].start_time
+#         # if its not the last row / stimulus presentation
+#         if row <= len(stimulus_presentations)-2:
+#             # get the start time of the next stimulus
+#             next_start_time = stimulus_presentations.iloc[row+1].start_time
+#         else:
+#             # if it is the last row, infer that the next start would be 750ms from now
+#             next_start_time = stimulus_presentations.iloc[row].start_time + 0.75
+#         # find the trial where change time falls between the current and next stimulus start times
+#         trial_data = trials[(trials.change_time>this_start_time) & (trials.change_time<=next_start_time)]
+#         if len(trial_data) > 0:
+#             trials_id = trial_data.index.values[0]
+#         else:
+#             trials_id = np.nan
+#         stimulus_presentations.loc[row, 'change_trials_id'] = trials_id
+#     return stimulus_presentations
+
+
+def add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
+    """
+    Add trials_id to stimulus presentations by finding the closest change time to each stimulus start time
+    If there is no corresponding change time, the trials_id is NaN
+    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
+    :param trials: trials attribute of SDK dataset object, must have 'change_time'
+    """
+    # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
+    if 'change_time' not in trials.columns: 
+        trials['change_time'] = trials['change_time_no_display_delay'] 
+
+    # for each stimulus_presentation, find the trials_id that is closest to the start time
+    # add to a new column called 'trials_id'
+    for idx, stimulus_presentation in stimulus_presentations.iterrows():
+        start_time = stimulus_presentation['start_time']
+        query_string = 'change_time > @start_time - 0.5 and change_time < @start_time + 0.5'
+        trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
+        if len(trials_id) == 1:
+            trials_id = trials_id.idxmin()
+        else:
+            trials_id = np.nan
+        stimulus_presentations.loc[idx, 'change_trials_id'] = trials_id
+    return stimulus_presentations
+
+
 def add_trial_type_to_stimulus_presentations(stimulus_presentations, trials):
     """
     Add trials_id to stimulus presentations table
     then join trial type columns of trials table with stimulus_presentations
+    adds trial type value to all rows of stimulus_presentations belonging to a trial
+    
     trial types = ['aborted', 'auto_rewarded', 'go', 'catch']
     :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
     :param trials: trials attribute of SDK dataset object, must have 'start_time'
@@ -419,8 +482,8 @@ def add_trial_type_to_stimulus_presentations(stimulus_presentations, trials):
         trials['change_time'] = trials['change_time_no_display_delay'] 
 
     # add trials_id for all stimulus presentations and merge to get trial type information
-    if 'trials_id' not in stimulus_presentations.columns:
-        stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    # if 'change_trials_id' not in stimulus_presentations.columns:
+    #     stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
     # get trial type columns
     trials = trials[['go', 'catch', 'aborted', 'auto_rewarded']]
     # merge trial type columns into stimulus_presentations
@@ -435,63 +498,27 @@ def add_trials_data_to_stimulus_presentations_table(stimulus_presentations, tria
     :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
     :param trials: trials attribute of SDK dataset object, must have 'change_time'
     """
+    
     # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
     if 'change_time' not in trials.columns: 
         trials['change_time'] = trials['change_time_no_display_delay'] 
 
     # add trials_id and merge to get trial type information
-    if 'trials_id' not in stimulus_presentations.columns:
-        stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    if 'change_trials_id' not in stimulus_presentations.columns:
+        stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
     # only keep certain columns
-    columns_to_keep = ['change_time', 'go', 'catch', 'aborted', 'auto_rewarded',
+    columns_to_keep = ['change_time', 'go', 'catch', 'auto_rewarded', #'aborted' - there is no change time on aborts to merge on
                      'hit', 'miss', 'false_alarm', 'correct_reject',
-                     'response_time', 'reward_time', 'reward_volume', ]
+                     'response_time', 'reward_time', 'reward_volume']
     if 'response_latency' in trials.columns: # VBN doesnt have response_latency
         columns_to_keep = columns_to_keep + ['response_latency']
     trials = trials[columns_to_keep]
-    # merge trials columns into stimulus_presentations
-    stimulus_presentations = stimulus_presentations.reset_index().merge(
-        trials, on='trials_id', how='left')
-    stimulus_presentations = stimulus_presentations.set_index(
-        'stimulus_presentations_id')
-    return stimulus_presentations
-
-
-def add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
-    """
-    Add trials_id for change and sham change times to stimulus presentations by
-    finding the closest change (or sham change) time to each stimulus start time.
-    Column is called 'change_trials_id' to distinguish from 'trials_id' which is applied to all flashes in a trial
-    If there is no corresponding change (or sham change) time, the change_trials_id is NaN
-    i.e. this function only assigns a trials_id to the stimulus presentations corresponding to go and catch trials as defined in the trials table.
-    If you want to assign trials_id to every stimulus presentation that is part of a trial, use
-        add_trials_id_to_stimulus_presentations
-    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
-    :param trials: trials attribute of SDK dataset object, must have 'change_time'
-    """
-    # for each stimulus_presentation, find the change_time that is closest to the start time
-    # then add the corresponding trials_id to stimulus_presentations
-    trials = trials.copy()
-    if 'change_time' not in trials.keys():
-        trials['change_time'] = trials['change_time_no_display_delay']
+    # Add change_trials_id column to trials to merge with stim presentations
+    trials['change_trials_id'] = trials.index.values
+    # merge trials columns into stimulus_presentations, how='left' to ensure only change trials are merged
+    stimulus_presentations = stimulus_presentations.reset_index().merge(trials, on='change_trials_id', how='left')
+    stimulus_presentations = stimulus_presentations.set_index('stimulus_presentations_id')
     
-    stimulus_presentations = stimulus_presentations.copy()
-    for row in range(len(stimulus_presentations)):
-        this_start_time = stimulus_presentations.iloc[row].start_time
-        # if its not the last row / stimulus presentation
-        if row <= len(stimulus_presentations)-2:
-            # get the start time of the next stimulus
-            next_start_time = stimulus_presentations.iloc[row+1].start_time
-        else:
-            # if it is the last row, infer that the next start would be 750ms from now
-            next_start_time = stimulus_presentations.iloc[row].start_time + 0.75
-        # find the trial where change time falls between the current and next stimulus start times
-        trial_data = trials[(trials.change_time>this_start_time) & (trials.change_time<=next_start_time)]
-        if len(trial_data) > 0:
-            trials_id = trial_data.index.values[0]
-        else:
-            trials_id = np.nan
-        stimulus_presentations.loc[row, 'change_trials_id'] = trials_id
     return stimulus_presentations
 
 
@@ -744,7 +771,8 @@ def add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentat
     stimulus_presentations = stimulus_presentations.copy()
     # if trials_id is not a column of stimulus_presentations, add it
     if 'trials_id' not in stimulus_presentations.keys():
-        stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+        print('trials_id does not exist in stimulus_presentations, please add it before running the function add_stimulus_count_within_trial_to_stimulus_presentations' )
+        # stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
 
     # label each stimulus presentation based on the number of stimuli since the trial start
     stimulus_presentations['stimulus_count_within_trial'] = None
@@ -771,8 +799,9 @@ def add_could_change_to_stimulus_presentations(stimulus_presentations, trials, l
     stimulus presentation could have been a change or sham change based on the known change time distribution.
     A stimulus could change if it is at least 4 stimulus flashes after the trial start,
     and there was not a lick on the previous stimulus, and the current or next stimulus is not omitted.
-    :param stimulus_presentations: SDK stimulus presentations table
-    :param trials: SDK trials table
+    :param stimulus_presentations: AllenSDK stimulus presentations table
+    :param trials: AllenSDK trials table
+    :param licks: AllenSDK licks table
     :return:
     """
 
@@ -780,12 +809,15 @@ def add_could_change_to_stimulus_presentations(stimulus_presentations, trials, l
     trials = trials.copy()
     stimulus_presentations = stimulus_presentations.copy()
     # if trials_id is not a column of stimulus_presentations, add it
-    if 'trials_id' not in stimulus_presentations.keys():
-        stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    # if 'trials_id' not in stimulus_presentations.keys():
+    #     stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
         # if trials_id is not a column of stimulus_presentations, add it
     if 'licks' not in stimulus_presentations.keys():
         stimulus_presentations = add_licks_to_stimulus_presentations(stimulus_presentations, licks)
         # if trials_id is not a column of stimulus_presentations, add it
+    if 'licked' not in stimulus_presentations.keys():
+        stimulus_presentations['licked'] = None
+        stimulus_presentations['licked'] = [True if len(licks) > 0 else False for licks in stimulus_presentations.licks.values]
     if 'stimulus_count_within_trial' not in stimulus_presentations.keys():
         stimulus_presentations = add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentations, trials)
 
@@ -871,7 +903,8 @@ def annotate_stimuli(dataset, inplace=False):
     trials = dataset.trials.copy()
     if 'change_time' not in trials.keys():
         trials['change_time'] = trials['change_time_no_display_delay']
-
+    if 'stimulus_count_within_trial' not in stimulus_presentations.keys():
+        stimulus_presentations = add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentations, trials)
     
     # limit to change detection block
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
@@ -883,7 +916,7 @@ def annotate_stimuli(dataset, inplace=False):
     stimulus_presentations['next_start_time'] = stimulus_presentations['start_time'].shift(-1)
 
     # add trials_id and trial_stimulus_index
-    stimulus_presentations['trials_id'] = None
+    # stimulus_presentations['trials_id'] = None
     stimulus_presentations['trial_stimulus_index'] = None
     last_trial_id = -1
     trial_stimulus_index = 0
@@ -906,7 +939,7 @@ def annotate_stimuli(dataset, inplace=False):
             trials_id = trials.loc[:row['start_time']].iloc[-1]['trials_id']
         except IndexError:
             trials_id = -1
-        stimulus_presentations.at[idx, 'trials_id'] = trials_id
+        # stimulus_presentations.at[idx, 'trials_id'] = trials_id
 
         if trials_id == last_trial_id:
             trial_stimulus_index += 1
@@ -930,31 +963,9 @@ def annotate_stimuli(dataset, inplace=False):
         how='left',
     ).set_index('stimulus_presentations_id')
 
-    # add previous_response_on_trial
-    stimulus_presentations['previous_response_on_trial'] = False
-    # set 'stimulus_presentations_id' and 'trials_id' as indices to speed
-    # lookup
-    stimulus_presentations = stimulus_presentations.reset_index(
-    ).set_index(['stimulus_presentations_id', 'trials_id'])
-    for idx, row in stimulus_presentations.iterrows():
-        stim_id, trials_id = idx
-        # get all stimuli before the current on the current trial
-        mask = (stimulus_presentations.index.get_level_values(0) < stim_id) & (
-            stimulus_presentations.index.get_level_values(1) == trials_id)
-        # check to see if any previous stimuli have a response lick
-        stimulus_presentations.at[idx, 'previous_response_on_trial'] = stimulus_presentations[mask]['response_lick'].any()
-    # set the index back to being just 'stimulus_presentations_id'
-    stimulus_presentations = stimulus_presentations.reset_index().set_index('stimulus_presentations_id')
-
-    # add could_change
-    stimulus_presentations['could_change'] = False
-    for idx, row in stimulus_presentations.iterrows():
-        # check if we meet conditions where a change could occur on this
-        # stimulus (at least 4th flash of trial, no previous change on trial)
-        if row['trial_stimulus_index'] >= 4 and row['previous_response_on_trial'] is False and row[
-                'image_name'] != 'omitted' and row['previous_image_name'] != 'omitted':
-            stimulus_presentations.loc[idx, 'could_change'] = True
-
+    # Add could change
+    stimulus_presentations = add_could_change_to_stimulus_presentations(stimulus_presentations, trials, dataset.licks)
+    
     if inplace is False:
         return stimulus_presentations
     
@@ -989,8 +1000,8 @@ def add_behavior_info_to_stimulus_presentations(stimulus_presentations, trials, 
     stimulus_presentations = add_change_trial_outcomes_to_stimulus_presentations(stimulus_presentations, trials)
     # add columns from trials table: ['go', 'catch', 'aborted', 'auto_rewarded']
     # applied to all stimulus presentations belonging to that trial
-    stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
-    stimulus_presentations = add_trial_type_to_stimulus_presentations(stimulus_presentations, trials)
+    # stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    # stimulus_presentations = add_trial_type_to_stimulus_presentations(stimulus_presentations, trials)
     # add the timing of licks and rewards for each stimulus presentation
     stimulus_presentations = add_licks_to_stimulus_presentations(stimulus_presentations, licks, time_window=[0, 0.75])
     stimulus_presentations = add_rewards_to_stimulus_presentations(stimulus_presentations, rewards, time_window=[0, 0.75])
@@ -1061,9 +1072,9 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
     stimulus_presentations = dataset.stimulus_presentations.copy()
     # limit to change detection block
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
-    
+
     trials = dataset.trials.copy()
-    if 'change_time' not in trials.keys():
+    if 'change_time' not in trials.keys(): 
         trials['change_time'] = trials['change_time_no_display_delay']
 
     # add licks
@@ -1073,7 +1084,6 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
     stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
         stimulus_presentations, dataset.running_speed, time_window=[0, 0.75])
     # if hasattr('ophys_experiment', 'eye_tracking'):
-
     try:
         stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
             stimulus_presentations,
@@ -1087,23 +1097,26 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
         print(e)
 
     # add trials info
-    try:  # not all session types have catch trials or omissions
-        stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
-            stimulus_presentations, trials)
-        # add time from last change
-        stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
-        # add pre-change
-        stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
-        # add licked Boolean
-        stimulus_presentations['licked'] = [True if len(
-            licks) > 0 else False for licks in stimulus_presentations.licks.values]
-        stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(-1)
-        # add omission annotation
-        stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(-1)
-        stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(1)
-    # add repeat number
-    except Exception as e:
-        print(e)
+    # try:  # not all session types have catch trials or omissions
+    stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+        stimulus_presentations, trials)
+    # add time from last change
+    stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
+    # # add whether a flash could have been a change based on the change time distribution
+
+    stimulus_presentations = add_could_change_to_stimulus_presentations(stimulus_presentations, trials, dataset.licks)
+    # add pre-change
+    stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
+    # add licked Boolean
+    if 'licked' not in stimulus_presentations.keys():
+        stimulus_presentations['licked'] = [True if len(licks) > 0 else False for licks in stimulus_presentations.licks.values]
+    stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(-1)
+    # add omission annotation
+    stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(-1)
+    stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(1)
+    # # add repeat number
+    # except Exception as e:
+    #     print(e)
 
     # add reward rate
     stimulus_presentations = add_reward_rate_to_stimulus_presentations(
