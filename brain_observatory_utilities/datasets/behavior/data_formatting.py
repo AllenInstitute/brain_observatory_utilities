@@ -1065,7 +1065,7 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     return stimulus_presentations
 
 
-def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10, active=active):
+def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10, active=True):
     """
     Takes in an SDK dataset object and returns the stimulus_presentations table with additional columns.
     Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
