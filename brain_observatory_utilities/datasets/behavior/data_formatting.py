@@ -6,10 +6,19 @@ from brain_observatory_utilities.utilities import general_utilities
 
 
 
-def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
+def limit_stimulus_presentations_to_change_detection(stimulus_presentations, active=True):
     '''
     if column 'stimulus_block_name' is in stimulus_presentations table (as in SDK v2.16.2),
     limit stimulus presentations table to the change detection block
+
+    stimulus_presentations: DataFrame
+        Table of stimulus_presentations metadata for VBO or VBN dataset
+        
+    active: Boolean
+        If True, will limit data to the active block of VBN datasets
+        If False, will return data for passive block
+        If using VBO data, active flag will be ignored and stim presentations for the current session (regardless of active or passive) will be returned
+    
     '''
     if 'stimulus_block_name' in stimulus_presentations: # This is true for VBO
         stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
@@ -17,7 +26,7 @@ def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
         # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
     else: # For VBO, limit to active block with images (should be stimulus_block=0, but lets be explicit to be sure)
         stimulus_presentations = stimulus_presentations[(stimulus_presentations.stimulus_name.str.contains('Natural_Images')) & 
-                                                        (stimulus_presentations.active==True)]
+                                                        (stimulus_presentations.active==active)]
 
     return stimulus_presentations
 
@@ -856,7 +865,7 @@ def add_could_change_to_stimulus_presentations(stimulus_presentations, trials, l
     return stimulus_presentations
 
 
-def annotate_stimuli(dataset, inplace=False):
+def annotate_stimuli(dataset, inplace=False, active=True):
     '''
     adds the following columns to the stimulus_presentations table, facilitating calculation
     of behavior performance based entirely on the stimulus_presentations table:
@@ -888,7 +897,10 @@ def annotate_stimuli(dataset, inplace=False):
     inplace : Boolean
         If True, operates on the dataset.stimulus_presentations object directly and returns None
         If False (default), operates on a copy and returns the copy
-
+    active: Boolean
+        If True, will limit data to the active block of VBN datasets
+        If False, will return data for passive block
+        If using VBO data, active flag will be ignored and stim presentations for the current session (regardless of active or passive) will be returned
     Returns:
     --------
     Pandas.DataFrame (if inplace == False)
@@ -907,7 +919,7 @@ def annotate_stimuli(dataset, inplace=False):
         stimulus_presentations = add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentations, trials)
     
     # limit to change detection block
-    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
+    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations, active=active)
 
     # add previous_image_name
     stimulus_presentations['previous_image_name'] = stimulus_presentations['image_name'].shift()
@@ -1053,7 +1065,7 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     return stimulus_presentations
 
 
-def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
+def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10, active=active):
     """
     Takes in an SDK dataset object and returns the stimulus_presentations table with additional columns.
     Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
@@ -1066,12 +1078,16 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
         See:
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
         https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
+    :param active: Boolean
+        If True, will limit data to the active block of VBN datasets
+        If False, will return data for passive block
+        If using VBO data, active flag will be ignored and stim presentations for the current session (regardless of active or passive) will be returned
     
     :return: stimulus_presentations attribute of dataset object, with additional columns added
     """
     stimulus_presentations = dataset.stimulus_presentations.copy()
     # limit to change detection block
-    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
+    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations, active=active)
 
     trials = dataset.trials.copy()
     if 'change_time' not in trials.keys(): 
