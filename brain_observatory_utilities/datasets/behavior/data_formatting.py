@@ -1135,11 +1135,12 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10, active
     #     print(e)
 
     # add reward rate
-    stimulus_presentations = add_reward_rate_to_stimulus_presentations(
-        stimulus_presentations, trials)
-    # add engagement state based on reward rate 
-    stimulus_presentations = add_engagement_state_to_stimulus_presentations(
+    if active: 
+        stimulus_presentations = add_reward_rate_to_stimulus_presentations(
             stimulus_presentations, trials)
+        # add engagement state based on reward rate 
+        stimulus_presentations = add_engagement_state_to_stimulus_presentations(
+                stimulus_presentations, trials)
     # add epochs
     stimulus_presentations = add_epochs_to_stimulus_presentations(
         stimulus_presentations,
