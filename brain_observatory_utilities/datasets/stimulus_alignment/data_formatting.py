@@ -53,7 +53,7 @@ def get_event_timestamps(
 
 
 def get_stimulus_response_xr(dataset,
-                             data_type='dff',
+                             data_type='spike_rate',
                              event_type='all',
                              time_window=[-0.5, 0.75],
                              response_window_duration=0.5,
@@ -138,7 +138,7 @@ def get_stimulus_response_xr(dataset,
         # set up variables to handle only one timeseries per event instead of multiple cell_specimen_ids
         unique_id_string = 'trace_id'  # create a column to take the place of 'cell_specimen_id'
         unique_ids = [0]  # list to iterate over
-    elif data_type == 'spike_rate':
+    elif data_type in ['spike_rate', 'spike_times']:
         unique_id_string = 'unit_id'
     else:
         unique_id_string = 'cell_specimen_id'
@@ -162,6 +162,7 @@ def get_stimulus_response_xr(dataset,
     elif ('spike_times' in data_type) or ('spike_rate' in data_type):
         spike_rate_df, _ = ephys.get_continous_spike_rate_for_units(dataset, spike_rate_bin_size, stimulus_block)
         data = ephys.build_tidy_cell_df(dataset, spike_rate_bin_size, stimulus_block) # dataset must be BehaviorEcephysSession object
+    
     unique_ids = np.unique(data[unique_id_string].values)
 
     # get native sampling rate if one is not provided
@@ -218,7 +219,7 @@ def get_stimulus_response_xr(dataset,
     # get mean response for each trial
     mean_responses = stimulus_response_xr.mean_response.data.T  # input needs to be array of nConditions, nCells
 
-    try:
+    if data_type != 'spike_rate':
         # compute significance of each trial, returns array of nConditions, nCells
         p_value_gray_screen = get_p_value_from_shuffled_spontaneous(mean_responses,
                                                                     dataset.stimulus_presentations,
@@ -226,7 +227,7 @@ def get_stimulus_response_xr(dataset,
                                                                     traces_array,
                                                                     response_window_duration*output_sampling_rate,
                                                                     output_sampling_rate)
-    except:
+    else:
         p_value_gray_screen = np.zeros(mean_responses.shape)
 
     # put p_value_gray_screen back into same coordinates as xarray and make it an xarray data array

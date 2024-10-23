@@ -491,8 +491,8 @@ def add_trial_type_to_stimulus_presentations(stimulus_presentations, trials):
         trials['change_time'] = trials['change_time_no_display_delay'] 
 
     # add trials_id for all stimulus presentations and merge to get trial type information
-    # if 'change_trials_id' not in stimulus_presentations.columns:
-    #     stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    if 'change_trials_id' not in stimulus_presentations.columns:
+        stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
     # get trial type columns
     trials = trials[['go', 'catch', 'aborted', 'auto_rewarded']]
     # merge trial type columns into stimulus_presentations
