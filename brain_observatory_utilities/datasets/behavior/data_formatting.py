@@ -1053,85 +1053,75 @@ def add_timing_info_to_stimulus_presentations(stimulus_presentations, trials, li
     return stimulus_presentations
 
 
-def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
+def get_annotated_stimulus_presentations(ophys_experiment, epoch_duration_mins=10):
     """
-    Takes in an SDK dataset object and returns the stimulus_presentations table with additional columns.
+    Takes in an ophys_experiment dataset object and returns the stimulus_presentations table with additional columns.
     Adds several useful columns to the stimulus_presentations table, including the mean running speed and pupil diameter for each stimulus,
     the times of licks for each stimulus, the rolling reward rate, an identifier for 10 minute epochs within a session,
     whether or not a stimulus was a pre-change or pre or post omission, and whether change stimuli were hits or misses
-    :param dataset: obj
+    :param ophys_experiment: obj
         AllenSDK BehaviorOphysExperiment object
-        or AllenSDK BehaviorEcephysSession object
-        or AllenSDK BehaviorSession object
-        See:
-        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_experiment.py  # noqa E501
-        https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/ecephys/behavior_ecephys_session.py  # noqa E501
-    
-    :return: stimulus_presentations attribute of dataset object, with additional columns added
+        A BehaviorOphysExperiment instance
+        See https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/behavior_ophys_ophys_experiment.py  # noqa E501
+    :return: stimulus_presentations attribute of BehaviorOphysExperiment, with additional columns added
     """
-    stimulus_presentations = dataset.stimulus_presentations.copy()
-    # limit to change detection block
-    stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
-
-    trials = dataset.trials.copy()
-    if 'change_time' not in trials.keys(): 
-        trials['change_time'] = trials['change_time_no_display_delay']
-
-    # add licks
+    stimulus_presentations = ophys_experiment.stimulus_presentations.copy()
     stimulus_presentations = add_licks_to_stimulus_presentations(
-        stimulus_presentations, dataset.licks, time_window=[0, 0.75])
-    # add running
+        stimulus_presentations, ophys_experiment.licks.copy(), time_window=[0, 0.75])
     stimulus_presentations = add_mean_running_speed_to_stimulus_presentations(
-        stimulus_presentations, dataset.running_speed, time_window=[0, 0.75])
-    # if hasattr('ophys_experiment', 'eye_tracking'):
+        stimulus_presentations, ophys_experiment.running_speed.copy(), time_window=[0, 0.75])
+
+    if hasattr('ophys_experiment', 'eye_tracking'):
+        try:
+            stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
+                stimulus_presentations,
+                ophys_experiment.eye_tracking.copy(),
+                column_to_use='pupil_width',
+                time_window=[0, 0.75])
+        except Exception as e:
+            print('could not add mean pupil to stimulus presentations, length of eye_tracking attribute is', len(
+                    ophys_experiment.eye_tracking.copy()))
+            print(e)
     try:
-        stimulus_presentations = add_mean_pupil_to_stimulus_presentations(
+        stimulus_presentations = add_reward_rate_to_stimulus_presentations(
+            stimulus_presentations, ophys_experiment.trials.copy())
+    except:
+        print('could not add reward rate')
+    try:
+        stimulus_presentations = add_epochs_to_stimulus_presentations(
             stimulus_presentations,
-            dataset.eye_tracking,
-            column_to_use='pupil_width',
-            time_window=[0, 0.75])
+            time_column='start_time',
+            epoch_duration_mins=epoch_duration_mins)
+    except:
+        print('could not add epochs')
+    try: 
+        stimulus_presentations = add_n_to_stimulus_presentations(stimulus_presentations)
+    except: 
+        print('could not add N to stim presentations')
+    try:  # not all session types have catch trials or omissions
         
+        # add time from last change
+        stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
+        # add pre-change
+        stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
+        # add licked Boolean
+        licks = stimulus_presentations.licks.copy()
+        stimulus_presentations['licked'] = [True if len(licks) > 0 else False for licks in licks.values]
+        stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(-1)
+        # add omission annotation
+        stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(-1)
+        stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(1)
+        # add trials data 
+        stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+            stimulus_presentations, ophys_experiment.trials.copy())
+        # add engagement state based on reward rate - note this reward rate is
+        # calculated differently than the SDK version
+        stimulus_presentations = add_engagement_state_to_stimulus_presentations(
+            stimulus_presentations, ophys_experiment.trials.copy())
     except Exception as e:
-        print('could not add mean pupil to stimulus presentations, length of eye_tracking attribute is', len(
-                dataset.eye_tracking))
         print(e)
 
-    # add trials info
-    # try:  # not all session types have catch trials or omissions
-    stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
-        stimulus_presentations, trials)
-    # add time from last change
-    stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
-    # # add whether a flash could have been a change based on the change time distribution
-
-    stimulus_presentations = add_could_change_to_stimulus_presentations(stimulus_presentations, trials, dataset.licks)
-    # add pre-change
-    stimulus_presentations['pre_change'] = stimulus_presentations['is_change'].shift(-1)
-    # add licked Boolean
-    if 'licked' not in stimulus_presentations.keys():
-        stimulus_presentations['licked'] = [True if len(licks) > 0 else False for licks in stimulus_presentations.licks.values]
-    stimulus_presentations['lick_on_next_flash'] = stimulus_presentations['licked'].shift(-1)
-    # add omission annotation
-    stimulus_presentations['pre_omitted'] = stimulus_presentations['omitted'].shift(-1)
-    stimulus_presentations['post_omitted'] = stimulus_presentations['omitted'].shift(1)
-    # # add repeat number
-    # except Exception as e:
-    #     print(e)
-
-    # add reward rate
-    stimulus_presentations = add_reward_rate_to_stimulus_presentations(
-        stimulus_presentations, trials)
-    # add engagement state based on reward rate 
-    stimulus_presentations = add_engagement_state_to_stimulus_presentations(
-            stimulus_presentations, trials)
-    # add epochs
-    stimulus_presentations = add_epochs_to_stimulus_presentations(
-        stimulus_presentations,
-        time_column='start_time',
-        epoch_duration_mins=epoch_duration_mins)
-
     return stimulus_presentations
-
 
 
 def calculate_response_matrix(stimuli, aggfunc=np.mean, sort_by_column=True, engaged_only=True):
