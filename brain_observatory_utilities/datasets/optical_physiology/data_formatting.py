@@ -76,6 +76,12 @@ def build_tidy_cell_df(ophys_experiment, exclude_invalid_rois=True):
     return tidy_df
 
 
+def get_event_timestamps(
+        stimulus_presentation,
+        event_type='all',
+        onset='start_time'):
+    '''
+    Gets timestamps of events of interest from the stimulus_presentations df.
 
     Parameters:
     ___________
