@@ -13,7 +13,8 @@ def get_trace_average(trace, timestamps, start_time, stop_time):
 
 
 def average_df_timeseries_values(dataframe, values_column):
-    """calculates the mean timeseries from a dataframe column.
+    """calculates the mean timeseries from a dataframe
+        column.
 
     Parameters
     ----------
@@ -385,7 +386,8 @@ def event_triggered_response(data, t, y, event_times, t_start=None, t_end=None, 
     # is list or array, turn into pd.Series
     elif type(event_times) is list or type(event_times) is np.ndarray:
         event_times = pd.Series(data=event_times,
-                                name='event_times')
+                                name='event_times'
+                                )
         # name the index column "original_index"
         event_times.index.name = 'original_index'
         original_index_column_name = event_times.index.name
@@ -425,10 +427,13 @@ def event_triggered_response(data, t, y, event_times, t_start=None, t_end=None, 
             # a value that includes an array that represents the
             # sliced data around the current event, interpolated
             # on the linearly spaced time array
-            data_dict.update({'event_{}_t={}'.format(event_number, event_time): np.interp(
+            data_dict.update({
+                'event_{}_t={}'.format(event_number, event_time): np.interp(
                     data_dict['time'],
                     data_slice.index - event_time,
-                    data_slice.values)})
+                    data_slice.values
+                )
+            })
 
         # define a wide dataframe as a dataframe of the above compiled dictionary  # NOQA E501
         wide_etr = pd.DataFrame(data_dict)
@@ -442,9 +447,13 @@ def event_triggered_response(data, t, y, event_times, t_start=None, t_end=None, 
             np.array(event_times),
             time_window=[t_start, t_end],
             sampling_rate=None,
-            include_endpoint=include_endpoint)
-        all_inds = event_indices + np.arange(start_ind_offset, end_ind_offset)[:, None]
-        wide_etr = pd.DataFrame(data[y].values.T[all_inds], index=trace_timebase,
+            include_endpoint=True
+        )
+        all_inds = event_indices + \
+            np.arange(start_ind_offset, end_ind_offset)[:, None]
+        wide_etr = pd.DataFrame(
+            data[y].values.T[all_inds],
+            index=trace_timebase,
             columns=['event_{}_t={}'.format(event_index, event_time) for event_index, event_time in enumerate(event_times)]  # NOQA E501
         ).rename_axis(index='time').reset_index()
 
@@ -458,15 +467,24 @@ def event_triggered_response(data, t, y, event_times, t_start=None, t_end=None, 
         tidy_etr = wide_etr.melt(id_vars='time')
 
         # add an "event_number" column that contains the event number
-        tidy_etr['event_number'] = tidy_etr['variable'].map(lambda s: s.split('event_')[1].split('_')[0]).astype(int)
+        tidy_etr['event_number'] = tidy_etr['variable'].map(
+            lambda s: s.split('event_')[1].split('_')[0]
+        ).astype(int)
 
-        tidy_etr[original_index_column_name] = tidy_etr['event_number'].apply(lambda row: original_index[row])
+        tidy_etr[original_index_column_name] = tidy_etr['event_number'].apply(
+            lambda row: original_index[row])
 
         # add an "event_time" column that contains the event time ()
-        tidy_etr['event_time'] = tidy_etr['variable'].map(lambda s: s.split('t=')[1]).astype(float)
+        tidy_etr['event_time'] = tidy_etr['variable'].map(
+            lambda s: s.split('t=')[1]
+        ).astype(float)
 
         # drop the "variable" column, rename the "value" column
-        tidy_etr = (tidy_etr.drop(columns=['variable']).rename(columns={'value': y}))
+        tidy_etr = (
+            tidy_etr
+            .drop(columns=['variable'])
+            .rename(columns={'value': y})
+        )
         # return the tidy event triggered responses
         return tidy_etr
 
