@@ -7,8 +7,6 @@ from brain_observatory_utilities.utilities import general_utilities
 
 import brain_observatory_utilities.utilities.general_utilities as utilities
 import brain_observatory_utilities.datasets.stimulus_alignment.data_formatting as stimulus_alignment
-from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
-
 
 
 def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
