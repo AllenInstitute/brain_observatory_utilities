@@ -9,6 +9,49 @@ from brain_observatory_utilities.datasets.optical_physiology import data_formatt
 from brain_observatory_utilities.datasets.electrophysiology import utilities as ephys
 
 
+def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
+    '''
+    if column 'stimulus_block_name' is in stimulus_presentations table (as in SDK v2.16.2),
+    limit stimulus presentations table to the change detection block
+    '''
+    if 'stimulus_block_name' in stimulus_presentations: # This is true for VBO
+        stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
+        # change a few columns from type Boolean to bool (they were previously Boolean so they could contain NaNs for non-change detection stim blocks)
+        # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
+    else: # For VBO, limit to active block with images (should be stimulus_block=0, but lets be explicit to be sure) 
+        stimulus_presentations = stimulus_presentations[(stimulus_presentations.stimulus_name.str.contains('Natural_Images')) &  
+                                                            (stimulus_presentations.active==True)] 
+
+
+    return stimulus_presentations
+
+
+def convert_boolean_cols_to_bool(stimulus_presentations):
+    '''
+    For any dataframe containing columns derived from the stimulus_presentations table,
+    go through all columns and identify those that are type boolean (which occurs when the column has NaNs and bools)
+    and convert NaNs to False then set dtype to bool.
+
+    This is needed because many operations fail on columns of type boolean.
+    Some columns in stimulus_presentations are boolean in new SDK outputs because of the new stimulus_blocks,
+    as many values specific to change_detection task are set to NaN in other stimulus blocks, which
+    means that the entire column gets the dtype boolean instead of bool.
+    '''
+    for column in stimulus_presentations.columns.values:
+        try:
+            if type(stimulus_presentations[column].dtype).__name__ == 'BooleanDtype':
+                row_ids = stimulus_presentations[stimulus_presentations[column].isnull()].index
+                stimulus_presentations.loc[row_ids, column] = False
+                stimulus_presentations[column] = stimulus_presentations[column].astype('bool')
+        except:
+            if stimulus_presentations[column].dtype == 'boolean':
+                # remove NaNs and make bool
+                row_ids = stimulus_presentations[stimulus_presentations[column].isnull()].index
+                stimulus_presentations.loc[row_ids, column] = False
+                stimulus_presentations[column] = stimulus_presentations[column].astype('bool')
+    return stimulus_presentations
+
+
 def get_event_timestamps(
         stimulus_presentations,
         event_type='all',
@@ -61,7 +104,7 @@ def get_stimulus_response_xr(dataset,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
-                             stimulus_block=0,
+                             stimulus_block='change_detection_behavior',
                              **kwargs):
     '''
     Parameters:
@@ -104,11 +147,22 @@ def get_stimulus_response_xr(dataset,
         Used when data_type = 'spike_rate'
         bin size, in seconds, to use when computing spike rate over time
         0.001 = 1ms, 0.01 = 10ms, 1 = 1s (spikes / second)
-    stimulus_block: int
-        Used when data_type = 'spike_rate'
-        stimulus block number indicating portion of VBN session to compute spike rates for
-        stimulus block 0 = change detection active behavior, 1 = 10s gray screen, 2 = gabor RF mapping,
-        3 = 5min gray screen, 4 = full field flashes, 5 = change detection passive replay
+    stimulus_block: int or 'change_detection_behavior' (default)
+        if 'change_detection_behavior', get change_detection_behavior block (will infer from stimulus_presentations table)
+        Otherwise, provide index of stimulus_block in stimulus_presentations table
+        i.e. stimulus block number indicating portion of session to compute responses for
+
+        For VisualBehaviorNeuropixels, stimulus blocks are: 
+            0 = change detection active behavior
+            1 = 10 seconds gray screen
+            2 = gabor patches receptive field mapping
+            3 = full field flashes
+            4 = change detection passive replay
+        For VisualBehaviorOphys, stimulus_blocks are: 
+            0 = 'initial_gray_screen_5min'
+            1 = 'change_detection_behavior'
+            2 = 'post_behavior_gray_screen_5min' 
+            3 = 'natural_movie_one'
 
     kwargs: key, value mappings
         Other keyword arguments are passed down to general_utilities.event_triggered_response(),
@@ -127,9 +181,13 @@ def get_stimulus_response_xr(dataset,
     # load stimulus_presentations table
     stimulus_presentations = dataset.stimulus_presentations
     # if the dataset is from VisualBehaviorNeuropixels, limit to the active change detection block (block 0)
-    if 'stimulus_block' in stimulus_presentations.keys():
+    if stimulus_block == 'change_detection_behavior':
+        # limit to change detection block
+        stimulus_presentations = behavior.limit_stimulus_presentations_to_change_detection(stimulus_presentations)
+    elif 'stimulus_block' in stimulus_presentations.columns: 
         stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block==stimulus_block]
-
+    else: 
+        print('provided stimulus_block must be "change_detection_behavior" or one of the unique values of the "stimulus_block" column of the stimulus_presentations table')
     # get event times and event ids (original order in the stimulus flow)
     event_times, event_ids = get_event_timestamps(stimulus_presentations, event_type)
 
@@ -159,8 +217,8 @@ def get_stimulus_response_xr(dataset,
     elif ('dff' in data_type) or ('events' in data_type) or ('filtered_events' in data_type):
         # load neural data
         data = ophys.build_tidy_cell_df(dataset, exclude_invalid_rois=exclude_invalid_rois)
-    elif ('spike_times' in data_type) or ('spike_rate' in data_type):
-        data = ephys.build_tidy_cell_df(dataset, spike_rate_bin_size, stimulus_block) # dataset must be BehaviorEcephysSession object
+    elif ('spike_rate' in data_type):
+        data = ephys.build_tidy_cell_df(dataset, stimulus_presentations, spike_rate_bin_size) # dataset must be BehaviorEcephysSession object
     unique_ids = np.unique(data[unique_id_string].values)
 
     # get native sampling rate if one is not provided
@@ -207,7 +265,7 @@ def get_stimulus_response_xr(dataset,
     elif data_type == 'dff':
         traces_array = np.vstack(dataset.dff_traces['dff'].values)
     elif data_type == 'spike_rate':
-        traces_array = np.vstack()
+        traces_array = np.vstack(data[data_type].values)
     else:
         traces_array = data[data_type].values
 
@@ -394,7 +452,7 @@ def get_stimulus_response_df(dataset,
                              event_type='all',
                              time_window=[-0.5, 0.75],
                              response_window_duration=0.5,
-                             interpolate=True,
+                             interpolate=False,
                              output_sampling_rate=None,
                              exclude_invalid_rois=True,
                              spike_rate_bin_size=0.01,
@@ -481,10 +539,11 @@ def get_stimulus_response_df(dataset,
         unique_id_string = 'unit_id'
     else:
         unique_id_string = 'ID'
-    # set spike_rate_bin_size and stimulus_block to default values when not using spike rate
-    if data_type != 'spike_rate':
-        spike_rate_bin_size = np.nan
-        stimulus_block = 0
+
+    # # set spike_rate_bin_size and stimulus_block to default values when not using spike rate
+    # if data_type != 'spike_rate':
+    #     spike_rate_bin_size = np.nan
+    #     stimulus_block = 0
 
     # get mean response after stimulus onset and during pre-stimulus baseline
     mean_response = stimulus_response_xr['mean_response']

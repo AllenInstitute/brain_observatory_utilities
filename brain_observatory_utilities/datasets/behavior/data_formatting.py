@@ -18,9 +18,8 @@ def limit_stimulus_presentations_to_change_detection(stimulus_presentations):
         stimulus_presentations = stimulus_presentations[stimulus_presentations.stimulus_block_name.str.contains('change_detection')]
         # change a few columns from type Boolean to bool (they were previously Boolean so they could contain NaNs for non-change detection stim blocks)
         # stimulus_presentations = convert_boolean_cols_to_bool(stimulus_presentations)
-    else: # For VBO, limit to active block with images (should be stimulus_block=0, but lets be explicit to be sure)
-        stimulus_presentations = stimulus_presentations[(stimulus_presentations.stimulus_name.str.contains('Natural_Images')) & 
-                                                        (stimulus_presentations.active==True)]
+    else: # For VBO, limit to active behavior block 
+        stimulus_presentations = stimulus_presentations[(stimulus_presentations.stimulus_block==0)]
 
     return stimulus_presentations
 
@@ -240,11 +239,20 @@ def add_licks_to_stimulus_presentations(stimulus_presentations,
 
     lick_times = licks['timestamps'].values
     licks_each_stim = stimulus_presentations.apply(
-        lambda row: lick_times[
-            ((lick_times > row["start_time"] + time_window[0]) & (lick_times < row["start_time"] + time_window[1]))],
-        axis=1,
-    )
+        lambda row: lick_times[((lick_times > row["start_time"] + time_window[0]) & (lick_times < row["start_time"] + time_window[1]))],
+        axis=1)
     stimulus_presentations["licks"] = licks_each_stim
+
+    # Add first lick time and lick latency relative to stim onset
+    first_lick_times = []
+    for i in range(len(stimulus_presentations)):
+        if len(stimulus_presentations.iloc[i]['licks'])>0: 
+            first_lick_times.append(stimulus_presentations.iloc[i]['licks'][0])
+        else: 
+            first_lick_times.append(np.nan)
+    stimulus_presentations['first_lick_time'] = first_lick_times
+    stimulus_presentations['lick_latency'] = stimulus_presentations['first_lick_time'] - stimulus_presentations['start_time']
+    
     return stimulus_presentations
 
 
@@ -513,8 +521,8 @@ def add_trials_data_to_stimulus_presentations_table(stimulus_presentations, tria
     columns_to_keep = ['change_time', 'go', 'catch', 'auto_rewarded', #'aborted' - there is no change time on aborts to merge on
                      'hit', 'miss', 'false_alarm', 'correct_reject',
                      'response_time', 'reward_time', 'reward_volume']
-    if 'response_latency' in trials.columns: # VBN doesnt have response_latency
-        columns_to_keep = columns_to_keep + ['response_latency']
+    # if 'response_latency' in trials.columns: # VBN doesnt have response_latency
+    #     columns_to_keep = columns_to_keep + ['response_latency']
     trials = trials[columns_to_keep]
     # Add change_trials_id column to trials to merge with stim presentations
     trials['change_trials_id'] = trials.index.values
