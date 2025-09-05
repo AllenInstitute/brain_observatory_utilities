@@ -182,8 +182,7 @@ def get_stimulus_response_xr(ophys_experiment,
     stimulus_presentations = behavior.limit_stimulus_presentations_to_change_detection(stimulus_presentations)
 
     # get event times and event ids (original order in the stimulus flow)
-    event_times, event_ids = get_event_timestamps(
-        stimulus_presentations, event_type)
+    event_times, event_ids = get_event_timestamps(stimulus_presentations, event_type)
 
     if ('running' in data_type) or ('pupil' in data_type) or ('lick' in data_type):
         # for behavioral datastreams

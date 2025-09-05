@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+
 def makePSTH(spikes, startTimes, windowDur, binSize=0.001):
     '''
     Convenience function to compute a peri-stimulus-time histogram
@@ -17,7 +18,7 @@ def makePSTH(spikes, startTimes, windowDur, binSize=0.001):
                 each time bin aligned to the start times;
             bins are the bin edges as defined by numpy histogram
     '''
-    bins = np.arange(0,windowDur+binSize,binSize)
+    bins = np.arange(0, windowDur+binSize, binSize)
     counts = np.zeros(bins.size-1)
     for start in startTimes:
         startInd = np.searchsorted(spikes, start)
@@ -26,6 +27,57 @@ def makePSTH(spikes, startTimes, windowDur, binSize=0.001):
     
     counts = counts/len(startTimes)
     return counts/binSize, bins[:-1]
+
+
+def make_psth(spike_times, stim_times, pre_window=0.5, post_window=1.0, bin_size=0.05):
+    """
+    Generate a Peri-Stimulus Time Histogram (PSTH).
+    
+    Parameters:
+    - spike_times: array-like, timestamps of all spikes (in seconds)
+    - stim_times: array-like, timestamps of stimulus onsets (in seconds)
+    - pre_window: float, time before stimulus to include in PSTH (seconds)
+    - post_window: float, time after stimulus to include in PSTH (seconds)
+    - bin_size: float, width of each time bin (seconds)
+    
+    Returns:
+    - firing_rates: 2D numpy array of firing rates (trials x bins)
+    - bin_centers: 1D numpy array of bin center times (relative to stimulus onset)
+    """
+
+    # Ensure inputs are numpy arrays 
+    spike_times = np.array(spike_times)
+    stim_times = np.array(stim_times)
+    
+    # Define bin edges from -pre_window to +post_window
+    bins = np.arange(-pre_window, post_window + bin_size, bin_size)
+    
+    # Compute centers of bins (for plotting)
+    bin_centers = bins[:-1] + bin_size / 2
+    
+    # Initialize a matrix to hold spike counts: rows = trials, columns = bins
+    all_counts = np.zeros((len(stim_times), len(bins) - 1))
+    
+    # Loop through each stimulus time to compute trial-specific spike counts
+    for i, stim_time in enumerate(stim_times):
+        # Select spikes that fall within the time window around this stimulus
+        mask = ((spike_times >= stim_time - pre_window) & 
+                (spike_times < stim_time + post_window))
+        
+        # Align spike times to stimulus onset (0 = stimulus)
+        trial_spikes = spike_times[mask] - stim_time
+        
+        # Bin the aligned spikes and count how many fall into each bin
+        counts, _ = np.histogram(trial_spikes, bins=bins)
+        
+        # Store the result in the i-th row (trial)
+        all_counts[i, :] = counts
+    
+    # Convert spike counts to firing rates (spikes per second)
+    firing_rates = all_counts / bin_size
+    
+    # Return firing rates (trials x bins) and bin center positions
+    return firing_rates, bin_centers
 
 
 def make_neuron_time_trials_array(units, spike_times, stim_table, 
@@ -75,8 +127,72 @@ def make_neuron_time_trials_array(units, spike_times, stim_table,
     return unit_array, time_vector
 
 
+def get_good_units(session):
+    # get units table
+    this_session_units = session.get_units()
 
-def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
+    # Apply QC criteria
+    good_units = this_session_units[
+        (this_session_units.isi_violations<.5) &
+        (this_session_units.amplitude_cutoff<.1) &
+        (this_session_units.presence_ratio>.95)]
+    print(len(good_units), 'units passing QC criteria')
+
+    return good_units
+
+
+def get_continous_spike_rate_for_units(session, stimulus_presentations, spike_rate_bin_size=0.01):
+    """
+    Create dataframe containing continuous spike rates across a full stimulus block for all units
+
+    session: SDK VBN session object
+    stimulus_presentations: stimulus_presentations table limited to the stimuli or stimulus blocks of interest
+    spike_rate_bin_size: bin size, in seconds, to use when computing spike rate over time
+                0.001 = 1ms, 0.01 = 10ms, 1 = 1s (spikes / second)
+    stimulus_block: stimulus block number indicating portion of VBN session to compute spike rates for
+                stimulus block 0 = change detection active behavior, 1 = 10s gray screen, 2 = gabor RF mapping,
+                3 = 5min gray screen, 4 = full field flashes, 5 = change detection passive replay
+    """
+
+    # get data
+    units = get_good_units(session)
+    spike_times = session.spike_times.copy()
+    stim_table = stimulus_presentations.copy()
+    # create timeframe from start to end of behavior block
+    start_time = stim_table.start_time.values[0]
+    end_time = stim_table.end_time.values[-1] + 10 # Add 10 seconds to make sure the last image flashes can be included
+    behavior_duration = end_time - start_time
+
+    # Get dimensions of output array
+    unit_ids = units.index.values
+    neuron_number = len(unit_ids)
+    num_time_bins = int(behavior_duration / spike_rate_bin_size) + 1
+
+    # Initialize array
+    unit_array = np.zeros((neuron_number, num_time_bins))
+
+    # Loop through units and trials and store spike counts for every unit
+    for i, unit_id in enumerate(unit_ids):
+        # grab spike times for this unit
+        unit_spike_times = spike_times[unit_id]
+        spike_rate, timestamps = make_psth(unit_spike_times, [start_time], pre_window=0, 
+                                           post_window=behavior_duration, bin_size=spike_rate_bin_size)
+        # spike_rate, timestamps = makePSTH(unit_spike_times, [start_time], behavior_duration, binSize=spike_rate_bin_size)
+        # convert to spikes per second
+        spike_rate = spike_rate * spike_rate_bin_size
+        unit_array[i, :] = spike_rate
+    
+    # turn it into a df where each row is a uit and column contains entire spike rate trace
+    # to match format of ophys dff_traces table
+    spike_rate_df = pd.DataFrame(index=units.index, columns=['spike_rate'])
+    for i, unit_id in enumerate(unit_ids):
+        spike_rate_df.loc[unit_id, 'spike_rate'] = unit_array[i, :]
+    spike_rate_df.index.name = 'unit_id'
+
+    return spike_rate_df, timestamps+start_time
+
+
+def build_tidy_cell_df(dataset, stimulus_presentations, spike_rate_bin_size=0.01):
     '''
     Builds a tidy dataframe describing activity for every unit in ephys session.
     Tidy format is defined as one row per observation.
@@ -85,6 +201,7 @@ def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
     Parameters:
     -----------
     dataset : AllenSDK BehaviorEcephysSession object
+    stimulus_presentations: stimulus_presentations table limited to the stimuli or stimulus blocks of interest
     spike_rate_bin_size: bin size, in seconds, to use when computing spike rate over time
                 0.001 = 1ms, 0.01 = 10ms, 1 = 1s (spikes / second)
     stimulus_block: stimulus block number indicating portion of VBN session to compute spike rates for
@@ -100,18 +217,16 @@ def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
             * spike_rate (float) : measured spike rate for every timestep
     '''
 
-    spike_rate_df, timestamps = get_continous_spike_rate_for_units(dataset, spike_rate_bin_size, stimulus_block)
-
+    spike_rate_df, timestamps = get_continous_spike_rate_for_units(dataset, stimulus_presentations, spike_rate_bin_size)
+    print('spike rate df computed')
     # make an empty list to populate with dataframes for each cell
     list_of_cell_dfs = []
 
     # iterate over each individual unit
-    for idx, unit_id in enumerate(spike_rate_df.index.values):
-        cell_specimen_id = unit_id
-
+    for unit_id in spike_rate_df.index.values:
         # build a tidy dataframe for this unit
         cell_df = pd.DataFrame({'timestamps': timestamps,
-            'spike_rate': spike_rate_df.loc[cell_specimen_id]['spike_rate']})  # noqa E501
+                                'spike_rate': spike_rate_df.loc[unit_id]['spike_rate']})  # noqa E501
 
         # Make the unit_id column categorical
         # This will reduce memory useage since the columns
@@ -124,58 +239,10 @@ def build_tidy_cell_df(dataset, spike_rate_bin_size=0.01, stimulus_block=0):
 
     # concatenate all dataframes in the list
     tidy_df = pd.concat(list_of_cell_dfs)
+    print('tidy cell df computed')
 
     # return the tidy dataframe
     return tidy_df
-
-
-
-def get_continous_spike_rate_for_units(session, spike_rate_bin_size=0.01, stimulus_block=0):
-    """
-    Create dataframe containing continuous spike rates across a full stimulus block for all units
-
-    session: SDK VBN session object
-    spike_rate_bin_size: bin size, in seconds, to use when computing spike rate over time
-                0.001 = 1ms, 0.01 = 10ms, 1 = 1s (spikes / second)
-    stimulus_block: stimulus block number indicating portion of VBN session to compute spike rates for
-                stimulus block 0 = change detection active behavior, 1 = 10s gray screen, 2 = gabor RF mapping,
-                3 = 5min gray screen, 4 = full field flashes, 5 = change detection passive replay
-    """
-
-    # get data
-    units = session.get_units()
-    spike_times = session.spike_times.copy()
-    stim_table = session.stimulus_presentations.copy()
-    # limit stim table to behavior block
-    stim_table = stim_table[stim_table.stimulus_block == stimulus_block]
-    # create timeframe from start to end of behavior block
-    start_time = stim_table.start_time.values[0]
-    end_time = stim_table.end_time.values[-1]
-    behavior_duration = end_time - start_time
-
-    # Get dimensions of output array
-    unit_ids = units.index.values
-    neuron_number = len(unit_ids)
-    num_time_bins = int(behavior_duration / spike_rate_bin_size) + 1
-
-    # Initialize array
-    unit_array = np.zeros((neuron_number, num_time_bins))
-
-    # Loop through units and trials and store spike counts for every unit
-    for i, unit_id in enumerate(unit_ids):
-        # grab spike times for this unit
-        unit_spike_times = spike_times[unit_id]
-        spike_rate, timestamps = makePSTH(unit_spike_times, [start_time], behavior_duration, binSize=spike_rate_bin_size)
-        unit_array[i, :] = spike_rate
-
-    # turn it into a df where each row is a uit and column contains entire spike rate trace
-    # to match format of ophys dff_traces table
-    spike_rate_df = pd.DataFrame(index=units.index, columns=['spike_rate'])
-    for i, unit_id in enumerate(unit_ids):
-        spike_rate_df.loc[unit_id, 'spike_rate'] = unit_array[i, :]
-    spike_rate_df.index.name = 'unit_id'
-
-    return spike_rate_df, timestamps
 
 
 def getImageNovelty(image_name, session_id, ecephys_sessions_table):
@@ -223,6 +290,5 @@ def getImageNovelty(image_name, session_id, ecephys_sessions_table):
     else:
         novelty_for_this_image = is_novel_image_set and \
                             bool(np.isin(image_set_for_this_image, ['G', 'H']))
-    
 
     return novelty_for_this_image
