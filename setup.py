@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="brain_observatory_utilities",
-    version="0.5.0",
+    version="0.5.1",
     packages=find_packages(exclude=["tests"]),
     include_package_data=True,
     description="Utilities for analyzing, manipulating and visualizing data for Brain Observatory projects",
