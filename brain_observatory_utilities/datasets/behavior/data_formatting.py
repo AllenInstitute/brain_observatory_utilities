@@ -1333,7 +1333,9 @@ def filter_eye_tracking(eye_tracking, interpolate_likely_blinks=False, normalize
     import scipy
 
     # set index to timestamps so they dont get overwritten by subsequent operations
-    eye_tracking = eye_tracking.set_index('timestamps')
+    # (only if 'timestamps' is a column; if it's already the index, leave it alone)
+    if 'timestamps' in eye_tracking.columns:
+        eye_tracking = eye_tracking.set_index('timestamps')
 
     # compute pupil_diameter and pupil_radius from pupil_area
     eye_tracking['pupil_diameter'] = np.sqrt(eye_tracking.pupil_area) / np.pi  # convert pupil area to pupil diameter

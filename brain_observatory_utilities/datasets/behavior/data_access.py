@@ -257,8 +257,11 @@ def get_pupil_data(eye_tracking, interpolate_likely_blinks=False, normalize_to_g
     if True in eye_tracking.likely_blink.unique():  # only can do this if there are likely blinks to filter out
         eye_tracking.loc[eye_tracking['likely_blink'], :] = np.nan
 
-    # add timestamps column back in
-    eye_tracking['timestamps'] = eye_tracking.index.values
+    # add timestamps column back in (only if not already present, to avoid
+    # overwriting real timestamps with index values when input has
+    # 'timestamps' as a column rather than as the index)
+    if 'timestamps' not in eye_tracking.columns:
+        eye_tracking['timestamps'] = eye_tracking.index.values
 
     # interpolate over likely blinks, which are now NaNs
     if interpolate_likely_blinks:
