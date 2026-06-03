@@ -394,26 +394,30 @@ def add_epochs_to_stimulus_presentations(stimulus_presentations, time_column='st
 
 def add_trials_id_to_stimulus_presentations(stimulus_presentations, trials):
     """
-    Add trials_id to stimulus presentations by finding the closest change time to each stimulus start time
-    If there is no corresponding change time, the trials_id is NaN
-    :param: stimulus_presentations: stimulus_presentations attribute of SDK dataset object, must have 'start_time'
-    :param trials: trials attribute of SDK dataset object, must have 'change_time'
-    """
-    # make sure the trials table has a `change_time` column (its called `change_time_no_display_lag` for VBN)
-    if 'change_time' not in trials.columns: 
-        trials['change_time'] = trials['change_time_no_display_delay'] 
+    Add a 'trials_id' column giving the trial that each stimulus presentation belongs to.
 
-    # for each stimulus_presentation, find the trials_id that is closest to the start time
-    # add to a new column called 'trials_id'
-    for idx, stimulus_presentation in stimulus_presentations.iterrows():
-        start_time = stimulus_presentation['start_time']
-        query_string = 'start_time > @start_time - 0.5 and start_time < @start_time + 0.5'
-        trials_id = (np.abs(start_time - trials.query(query_string)['change_time']))
-        if len(trials_id) == 1:
-            trials_id = trials_id.idxmin()
-        else:
-            trials_id = np.nan
-        stimulus_presentations.loc[idx, 'trials_id'] = trials_id
+    Unlike add_change_trials_id_to_stimulus_presentations (which labels only the change /
+    sham-change flash of each go / catch trial), this assigns a trials_id to EVERY flash, by
+    mapping each stimulus start_time to the trial whose start_time most recently preceded it.
+    Flashes that precede the first trial start get trials_id = NaN.
+
+    Trial-level attributes (e.g. go, catch, aborted, auto_rewarded) live in the trials table and
+    can be joined onto all flashes through this trials_id when a per-flash value is needed, rather
+    than being denormalized onto the stimulus_presentations table.
+
+    :param stimulus_presentations: stimulus_presentations table, must have 'start_time'
+    :param trials: trials table, must have 'start_time'
+    """
+    stimulus_presentations = stimulus_presentations.copy()
+    # sort trials by start_time so searchsorted positions map to trials in time order
+    trials_sorted = trials.sort_values('start_time')
+    # for each flash, the position of the trial whose start_time most recently precedes it
+    pos = np.searchsorted(trials_sorted['start_time'].values,
+                          stimulus_presentations['start_time'].values, side='right') - 1
+    trials_id = np.full(len(stimulus_presentations), np.nan)
+    valid = pos >= 0  # flashes before the first trial start stay NaN
+    trials_id[valid] = trials_sorted.index.values[pos[valid]]
+    stimulus_presentations['trials_id'] = trials_id
     return stimulus_presentations
 
 
@@ -517,10 +521,18 @@ def add_trials_data_to_stimulus_presentations_table(stimulus_presentations, tria
     # add trials_id and merge to get trial type information
     if 'change_trials_id' not in stimulus_presentations.columns:
         stimulus_presentations = add_change_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
-    # only keep certain columns
-    columns_to_keep = ['change_time', 'go', 'catch', 'auto_rewarded', #'aborted' - there is no change time on aborts to merge on
+    # only keep certain columns. These are trial-level values that are meaningful only for the
+    # change / sham-change flash of each go / catch trial, so they are merged onto change rows only.
+    # Deliberately NOT included:
+    #   - 'change_time'  : redundant with the start_time of the is_change flash (see
+    #                      add_time_from_last_change_to_stimulus_presentations, which uses the
+    #                      is_change flashes' start_time as the change time).
+    #   - 'response_time': redundant with the per-flash response_latency / lick_latency.
+    #   - 'aborted'      : aborted trials have no change time to merge on; look it up via trials_id.
+    # All of these remain available in the trials table and can be joined via trials_id if needed.
+    columns_to_keep = ['go', 'catch', 'auto_rewarded',
                      'hit', 'miss', 'false_alarm', 'correct_reject',
-                     'response_time', 'reward_time', 'reward_volume']
+                     'reward_time', 'reward_volume']
     # if 'response_latency' in trials.columns: # VBN doesnt have response_latency
     #     columns_to_keep = columns_to_keep + ['response_latency']
     trials = trials[columns_to_keep]
@@ -780,10 +792,9 @@ def add_stimulus_count_within_trial_to_stimulus_presentations(stimulus_presentat
     :param trials: trials attribute of dataset object, must have 'start_time'
     """
     stimulus_presentations = stimulus_presentations.copy()
-    # if trials_id is not a column of stimulus_presentations, add it
+    # if trials_id is not a column of stimulus_presentations, add it (assigns a trials_id to every flash)
     if 'trials_id' not in stimulus_presentations.keys():
-        print('trials_id does not exist in stimulus_presentations, please add it before running the function add_stimulus_count_within_trial_to_stimulus_presentations' )
-        # stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+        stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
 
     # label each stimulus presentation based on the number of stimuli since the trial start
     stimulus_presentations['stimulus_count_within_trial'] = None
@@ -1085,7 +1096,7 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
     stimulus_presentations = limit_stimulus_presentations_to_change_detection(stimulus_presentations)
 
     trials = dataset.trials.copy()
-    if 'change_time' not in trials.keys(): 
+    if 'change_time' not in trials.keys():
         trials['change_time'] = trials['change_time_no_display_delay']
 
     # add licks
@@ -1107,10 +1118,17 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
                 dataset.eye_tracking))
         print(e)
 
-    # add trials info
-    # try:  # not all session types have catch trials or omissions
-    stimulus_presentations = add_trials_data_to_stimulus_presentations_table(
+    # add trials info, split by what each value actually means (matches the design in the
+    # overhaul_annotate_stim_presentations branch):
+    #  - trial OUTCOMES (change_time, hit, miss, false_alarm, correct_reject, reward_time,
+    #    reward_volume) are meaningful only for the change / sham-change flash, so they are merged
+    #    onto those rows only, via change_trials_id.
+    stimulus_presentations = add_change_trial_outcomes_to_stimulus_presentations(
         stimulus_presentations, trials)
+    #  - trial TYPE (go, catch, aborted, auto_rewarded) describes the whole trial, so it is
+    #    broadcast to EVERY flash belonging to the trial, via a trials_id assigned to all flashes.
+    stimulus_presentations = add_trials_id_to_stimulus_presentations(stimulus_presentations, trials)
+    stimulus_presentations = add_trial_type_to_stimulus_presentations(stimulus_presentations, trials)
     # add time from last change
     stimulus_presentations = add_time_from_last_change_to_stimulus_presentations(stimulus_presentations)
     # # add whether a flash could have been a change based on the change time distribution
