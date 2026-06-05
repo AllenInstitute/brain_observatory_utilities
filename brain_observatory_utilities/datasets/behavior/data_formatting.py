@@ -298,49 +298,60 @@ def calculate_reward_rate(response_latency=None,
     return reward_rate
 
 
-def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials):
+def add_reward_rate_to_stimulus_presentations(stimulus_presentations, trials,
+                                              rewards=None, window_flashes=320,
+                                              flash_duration=0.75):
     '''
-    Parameters:
-    ____________
-    trials: Pandas.DataFrame
-        dataset.trials
-    stimulus_presentation: Pandas.DataFrame
-        ophys_datasetexperiment.stimulus_presentations
+    Add a 'reward_rate' column (rewards/min) computed at the STIMULUS (flash) level rather than the
+    trial level. For each flash a boolean indicates whether a reward was delivered within
+    [start_time, start_time + flash_duration]; that per-flash signal is smoothed with a centered
+    triangular window of `window_flashes` flashes and scaled to rewards/min (x 60 / flash_duration).
 
-    Returns:
-    ___________
-    stimulus_presentation: Pandas.DataFrame
-        with 'reward_rate_trials' column
+    This deliberately differs from the SDK / trial-based reward rate (a rolling rate over trials):
+    a trial-based rate is already available from the SDK, so computing it at the stimulus level here
+    keeps the engagement signal on the same grain as the stimulus-based behavior metrics.
 
-    'reward_rate' is calculated by the SDK based on the rolling reward rate over trials (not stimulus presentations)
-    https://github.com/AllenInstitute/AllenSDK/blob/master/allensdk/brain_observatory/behavior/trials_processing.py#L941
+    Reward times come from `rewards['timestamps']` when a rewards table is provided (preferred;
+    get_annotated_stimulus_presentations passes dataset.rewards), otherwise from trials['reward_time'].
+    Only EARNED rewards count toward the rate; auto-delivered (free) rewards are excluded.
+
+    Parameters
+    ----------
+    stimulus_presentations : DataFrame, must have 'start_time'
+    trials : DataFrame, used only for the reward-time fallback (needs 'reward_time')
+    rewards : DataFrame or None, must have 'timestamps' if provided
+    window_flashes : int, flashes in the centered triangular smoothing window (320 ~= 4 min)
+    flash_duration : float, seconds per flash
+
+    Returns
+    -------
+    stimulus_presentations with a 'reward_rate' column (rewards/min)
     '''
+    # exclude auto-delivered (free) rewards: engagement should reflect the EARNED reward rate
+    if rewards is not None and 'timestamps' in getattr(rewards, 'columns', []):
+        rw = rewards
+        auto_col = next((c for c in ('auto_rewarded', 'autorewarded') if c in rw.columns), None)
+        if auto_col is not None:
+            rw = rw[rw[auto_col] != True]  # noqa: E712  (keeps False and NaN, drops True)
+        reward_times = np.asarray(rw['timestamps'].values, dtype=float)
+    elif 'reward_time' in trials.columns:
+        tr = trials[trials['auto_rewarded'] != True] if 'auto_rewarded' in trials.columns else trials  # noqa: E712
+        reward_times = pd.to_numeric(tr['reward_time'], errors='coerce').dropna().values.astype(float)
+    else:
+        reward_times = np.array([], dtype=float)
+    reward_times = np.sort(reward_times)
 
-    last_time = 0
-    reward_rate_by_frame = []
+    starts = stimulus_presentations['start_time'].values.astype(float)
+    # boolean per flash: a reward fell within [start, start + flash_duration]
+    rewarded = (np.searchsorted(reward_times, starts + flash_duration, side='right')
+                - np.searchsorted(reward_times, starts, side='left')) > 0
 
-    # need to calculate response latency because SDK doesnt include it for VBN
-    if 'change_time_no_display_delay' in trials.keys(): # this means its from VBN
-        trials['response_latency'] = trials.response_time-trials.change_time_no_display_delay
-        trials['change_time'] = trials.change_time_no_display_delay
+    # centered triangular rolling mean of the per-flash reward boolean, scaled to rewards/min
+    reward_rate = (pd.Series(rewarded.astype(float))
+                   .rolling(window=window_flashes, min_periods=1, win_type='triang', center=True)
+                   .mean()) * (60.0 / flash_duration)
 
-    # recalculate reward_rate for trials 
-    trials['reward_rate'] = calculate_reward_rate(trials['response_latency'].values, trials['start_time'])
-
-    trials = trials[trials['aborted'] == False]  # NOQA
-    for change_time in trials.change_time.values:
-        reward_rate = trials[trials.change_time ==  # NOQA
-                             change_time].reward_rate.values[0]
-        # add reward rate value from trial to all stim presentations belonging to that trial
-        for start_time in stimulus_presentations.start_time: 
-            if (start_time < change_time) and (start_time > last_time):
-                reward_rate_by_frame.append(reward_rate)
-                last_time = start_time
-    # fill the last flashes with last value
-    for i in range(len(stimulus_presentations) - len(reward_rate_by_frame)):
-        reward_rate_by_frame.append(reward_rate_by_frame[-1])
-
-    stimulus_presentations['reward_rate'] = reward_rate_by_frame
+    stimulus_presentations['reward_rate'] = reward_rate.values
     return stimulus_presentations
 
 
@@ -348,9 +359,9 @@ def add_engagement_state_to_stimulus_presentations(
         stimulus_presentations, trials):
     """
     Add 'engaged' Boolean column and 'engagement_state' string ('engaged' or 'disengaged')
-    using threshold of  2 rewards per minute, with reward_rate calculated as in the SDK by the
-    function add_reward_rate_to_stimulus_presentations() in this repo, which is a copy of what is done in the SDK.
-    Previously this function pulled directly from the SDK, but the funciton was added to a class and is no longer directly accessible.
+    using a threshold of 2 rewards per minute. reward_rate is computed at the STIMULUS level by
+    add_reward_rate_to_stimulus_presentations() in this repo (rewards/min over a centered ~4-min
+    flash window), which deliberately differs from the SDK's trial-based reward rate.
 
     :param stimulus_presentations: stimulus_presentations attribute of SDK dataset object
     :param trials: trials attribute of SDK dataset object
@@ -1147,9 +1158,9 @@ def get_annotated_stimulus_presentations(dataset, epoch_duration_mins=10):
     # except Exception as e:
     #     print(e)
 
-    # add reward rate
+    # add reward rate (stimulus-level: rewards/min over a centered ~4-min flash window)
     stimulus_presentations = add_reward_rate_to_stimulus_presentations(
-        stimulus_presentations, trials)
+        stimulus_presentations, trials, rewards=dataset.rewards)
     # add engagement state based on reward rate 
     stimulus_presentations = add_engagement_state_to_stimulus_presentations(
             stimulus_presentations, trials)
